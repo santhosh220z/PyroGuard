@@ -1,0 +1,33 @@
+# PyroGuard Configuration
+
+# Model settings
+MODEL_PATH: models/fire_smoke_yolo.pt
+CONFIDENCE_THRESHOLD: 0.25
+IOU_THRESHOLD: 0.45
+
+# Detection settings
+CONFIRMATION_FRAMES: 3
+CONFIRMATION_WINDOW: 5  # seconds
+ALERT_COOLDOWN: 30  # seconds
+
+# Camera settings
+CAMERA_SOURCE: 0
+IMAGE_SIZE: 640
+
+# Database settings
+DATABASE_URL: sqlite:///data/incidents/incidents.db
+
+# Alert settings
+SMTP_HOST: ""
+SMTP_PORT: 587
+SMTP_USERNAME: ""
+SMTP_PASSWORD: ""
+TELEGRAM_BOT_TOKEN: ""
+TELEGRAM_CHAT_ID: ""
+WEBHOOK_URL: ""
+
+# Logging
+LOG_LEVEL: INFO
+
+# Mode
+DRY_RUN: true
