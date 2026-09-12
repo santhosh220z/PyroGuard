@@ -29,7 +29,7 @@ def test_fire_above_threshold():
         assert isinstance(detections, list), "Detections should be a list"
         print("✅ test_fire_above_threshold: PASSED")
     except FileNotFoundError:
-        # Expected if model weights don't exist yet
+        # Expected if model weights not present
         print("⚠️  test_fire_above_threshold: SKIPPED (model weights not found)")
     except Exception as e:
         print(f"⚠️  test_fire_above_threshold: INFO - {type(e).__name__}")
@@ -48,6 +48,7 @@ def test_fire_below_threshold():
         assert isinstance(detections, list), "Detections should be a list"
         print("✅ test_fire_below_threshold: PASSED")
     except FileNotFoundError:
+        # Expected if model weights don't exist yet
         print("⚠️  test_fire_below_threshold: SKIPPED (model weights not found)")
     except Exception as e:
         print(f"⚠️  test_fire_below_threshold: INFO - {type(e).__name__}")
