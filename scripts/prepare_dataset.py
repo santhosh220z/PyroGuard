@@ -49,7 +49,7 @@ def inspect_dataset_structure():
             labels_dir = split_dir / "labels"
             
             n_images = len(list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png"))) if images_dir.exists() else 0
-            n_labels = len(list(labels_dir.glob(".txt"))) if labels_dir.exists() else 0
+            n_labels = len(list(labels_dir.glob("*.txt"))) if labels_dir.exists() else 0
             
             print(f"  {split}: {n_images} images, {n_labels} labels")
             valid_splits_found.append(split)
@@ -86,12 +86,12 @@ def validate_annotations():
             valid = False
             continue
         
-        image_files = list(images.glob("*.jpg") + list(images.glob("*.png")) for images in [images_dir])
+        image_files = list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png"))
         label_files = list(labels_dir.glob("*.txt"))
         
         # Check for missing labels
         image_stems = {f.stem for f in image_files}
-        label_stems = {f.stem.replace(".txt", "") for f in label_files}  # labels are .txt
+        label_stems = {f.stem for f in label_files}
         
         missing_labels = image_stems - label_stems
         extra_labels = label_stems - image_stems
@@ -124,16 +124,17 @@ def validate_annotations():
                         except ValueError:
                             print(f"  {split}: non-integer class_id in {label_file}")
                             valid = False
-                        
-                            # Check for out-of-range values (should be 0-1)
-                            for val in [x_center, y_center, width, height]:
-                                try:
-                                    fval = float(val)
-                                    if fval < 0 or fval > 1:
-                                        print(f"  {split}: out-of-range coordinate {val} in {label_file}")
-                                        valid = False
-                                except ValueError:
-                                    pass
+
+                        # Check for out-of-range values (should be 0-1)
+                        for val in [x_center, y_center, width, height]:
+                            try:
+                                fval = float(val)
+                                if fval < 0 or fval > 1:
+                                    print(f"  {split}: out-of-range coordinate {val} in {label_file}")
+                                    valid = False
+                            except ValueError:
+                                print(f"  {split}: non-numeric coordinate {val} in {label_file}")
+                                valid = False
             except Exception as e:
                 print(f"  {split}: error reading {label_file}: {e}")
                 valid = False

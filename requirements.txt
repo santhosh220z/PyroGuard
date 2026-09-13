@@ -17,10 +17,12 @@ uvicorn[standard]>=0.29.0
 # Utilities
 python-dotenv>=1.0.0
 pydantic>=2.7.0
+PyYAML>=6.0
 
 # Database
 
 # Alerting
+aiohttp>=3.9.0
 requests>=2.31.0  # for webhook alerts
 
 # Testing
