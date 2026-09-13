@@ -18,14 +18,15 @@ Requirements (from config):
 import os
 import json
 import cv2
+import yaml
 from pathlib import Path
 import shutil
 
 # Dataset paths (D-Fire, do not modify originals)
-RAW_DATASET_DIR = Path("datasets/raw")
+RAW_DATASET_DIR = Path("datasets/data")
 PROCESSED_DATASET_DIR = Path("datasets/processed")
 
-FIRE_CLASSES = ["fire", "smoke"]
+FIRE_CLASSES = ["smoke", "fire"]  # class id 0 = smoke, 1 = fire (verified visually)
 
 
 def inspect_dataset_structure():
@@ -125,13 +126,18 @@ def validate_annotations():
                             print(f"  {split}: non-integer class_id in {label_file}")
                             valid = False
 
-                        # Check for out-of-range values (should be 0-1)
+                        # Check for out-of-range values (should be 0-1).
+                        # Ultralytics clips labels at load time; a small overflow
+                        # (coords > 1.0 in a few D-Fire annotations) is a warning,
+                        # not an error. Anything >= 11% over bounds is an error.
                         for val in [x_center, y_center, width, height]:
                             try:
                                 fval = float(val)
-                                if fval < 0 or fval > 1:
+                                if fval < 0 or fval > 1.1:
                                     print(f"  {split}: out-of-range coordinate {val} in {label_file}")
                                     valid = False
+                                elif fval > 1.0:
+                                    print(f"  {split}: WARNING overflow coordinate {val} in {label_file} (will be clipped)")
                             except ValueError:
                                 print(f"  {split}: non-numeric coordinate {val} in {label_file}")
                                 valid = False
@@ -254,13 +260,38 @@ def detect_missing_annotations():
     return missing == 0
 
 
+def generate_data_yaml():
+    """Write a YOLO data.yaml pointing at the raw dataset splits."""
+    print("\n" + "=" * 60)
+    print("DATA.YAML GENERATION")
+    print("=" * 60)
+
+    data_yaml = {
+        "path": str(RAW_DATASET_DIR.absolute()),
+        "train": "train/images",
+        "val": "val/images",
+        "test": "test/images",
+        "nc": len(FIRE_CLASSES),
+        "names": FIRE_CLASSES,
+    }
+
+    PROCESSED_DATASET_DIR.mkdir(parents=True, exist_ok=True)
+    yaml_path = PROCESSED_DATASET_DIR / "data.yaml"
+    with open(yaml_path, "w") as f:
+        yaml.safe_dump(data_yaml, f, sort_keys=False)
+
+    print(f"  Wrote {yaml_path}")
+    print(f"  nc={data_yaml['nc']}, names={data_yaml['names']}")
+    return yaml_path.exists()
+
+
 def main():
     """Run all dataset validation checks."""
     print("PyroGuard Dataset Preparation")
     print(f"Raw dataset: {RAW_DATASET_DIR}")
     print(f"Processed dataset: {PROCESSED_DATASET_DIR}")
     print()
-    
+
     results = {
         "structure": inspect_dataset_structure(),
         "annotations": validate_annotations(),
@@ -268,23 +299,26 @@ def main():
         "corrupted": detect_corrupted_images(),
         "missing_annotations": detect_missing_annotations()
     }
-    
+
     print("\n" + "=" * 60)
     print("VALIDATION SUMMARY")
     print("=" * 60)
-    
+
     all_passed = all(results.values())
     for check, passed in results.items():
         status = "PASS" if passed else "FAIL"
         print(f"  {check}: {status}")
-    
+
     print(f"\nOverall: {'ALL CHECKS PASSED' if all_passed else 'SOME CHECKS FAILED'}")
-    
-    # Create processed directory structure if needed
+
+    # Create processed directory + data.yaml for YOLO only if dataset is valid
     if all_passed:
-        PROCESSED_DATASET_DIR.mkdir(parents=True, exist_ok=True)
-        print(f"\nProcessed dataset directory ready: {PROCESSED_DATASET_DIR}")
-    
+        if generate_data_yaml():
+            print(f"\nProcessed dataset directory ready: {PROCESSED_DATASET_DIR}")
+        else:
+            all_passed = False
+            print("❌ Failed to write data.yaml")
+
     return all_passed
 
 

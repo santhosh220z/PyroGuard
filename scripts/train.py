@@ -25,6 +25,7 @@ Configurable parameters:
 
 import os
 import sys
+import shutil
 from pathlib import Path
 
 # Add project root to path

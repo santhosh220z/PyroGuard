@@ -21,7 +21,9 @@ class DetectionModel:
         self.confirmation_frames = confirmation_frames
         self.confirmation_window = confirmation_window  # seconds
         self.model = None
-        self.class_names = ["fire", "smoke"]
+        # D-Fire class id mapping: 0 = smoke, 1 = fire (verified visually
+        # against annotated samples and the dataset's own data.yaml)
+        self.class_names = ["smoke", "fire"]
         self.initialized = False
         
         # Temporal verification state
@@ -37,6 +39,11 @@ class DetectionModel:
             raise FileNotFoundError(f"Model not found at {self.model_path}")
         
         self.model = YOLO(str(model_path))
+        # The checkpoint was trained against a data.yaml with swapped names
+        # (0='fire', 1='smoke'); override with the verified D-Fire mapping so
+        # runtime labels match reality. Training used indices only, so the
+        # learned weights are unaffected.
+        self.model.names = {i: name for i, name in enumerate(self.class_names)}
         self.class_names = self.model.names
         self.initialized = True
         return True
