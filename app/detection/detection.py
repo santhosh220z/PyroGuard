@@ -43,8 +43,10 @@ class DetectionModel:
         # (0='fire', 1='smoke'); override with the verified D-Fire mapping so
         # runtime labels match reality. Training used indices only, so the
         # learned weights are unaffected.
-        self.model.names = {i: name for i, name in enumerate(self.class_names)}
-        self.class_names = self.model.names
+        # Note: ultralytics >=8.2 exposes `names` as a read-only property on
+        # YOLO; the underlying task model's attribute is the mutable one.
+        self.model.model.names = {i: name for i, name in enumerate(self.class_names)}
+        self.class_names = self.model.model.names
         self.initialized = True
         return True
     

@@ -9,9 +9,6 @@ router = APIRouter(tags=["pyroguard"])
 # Shared incident database instance (created lazily, reused across requests)
 _incident_db = None
 
-# Shared camera manager (opened once, kept alive for the live feed)
-_camera_manager = None
-
 
 def get_incident_db():
     """Get the shared incident database instance."""
@@ -24,13 +21,9 @@ def get_incident_db():
 
 
 def get_camera_manager():
-    """Get the shared camera manager instance (opens cameras once, not per request)."""
-    global _camera_manager
-    if _camera_manager is None:
-        from app.cameras.camera_manager import CameraManager
-        from app.config.config import settings
-        _camera_manager = CameraManager(cameras_config=settings.CAMERAS)
-    return _camera_manager
+    """Get the shared camera manager from the live detection service."""
+    from app.detection.live_service import get_live_service
+    return get_live_service().manager
 
 
 def _primary_camera_id(manager) -> str:
@@ -52,9 +45,12 @@ async def camera_stream(cam: str = None):
     if cam_id is None:
         raise HTTPException(status_code=404, detail="No cameras configured")
 
+    from app.detection.live_service import get_live_service
+    service = get_live_service()
+
     def generate():
         while True:
-            frame, _ = manager.get_frame(cam_id)
+            frame = service.get_frame(cam_id)
             if frame is None:
                 _time.sleep(0.2)
                 continue
@@ -77,7 +73,8 @@ async def camera_snapshot():
     """Return the latest camera frame as a single JPEG image."""
     manager = get_camera_manager()
     cam_id = _primary_camera_id(manager)
-    frame, _ = manager.get_frame(cam_id)
+    from app.detection.live_service import get_live_service
+    frame = get_live_service().get_frame(cam_id)
     if frame is None:
         raise HTTPException(status_code=503, detail="Camera frame unavailable")
     ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
@@ -105,10 +102,19 @@ async def system_status():
     }
 
 
+@router.get("/detection/live", summary="Live detection state")
+async def detection_live():
+    """Current real-time detection state from the live detection service."""
+    from app.detection.live_service import get_live_service
+    return get_live_service().get_live_status()
+
+
 @router.get("/cameras", summary="List cameras with health status")
 async def list_cameras():
     """List configured cameras and their health status."""
+    from app.detection.live_service import get_live_service
     manager = get_camera_manager()
+    service_fps = get_live_service()._fps
     status_info = {}
     for cam in manager.cameras:
         cam_id = cam["id"]
@@ -119,7 +125,8 @@ async def list_cameras():
         status_info[cam_id] = {
             "name": cam["name"],
             "enabled": cam["enabled"],
-            **cam_status
+            **cam_status,
+            "fps": service_fps.get(cam_id, 0.0),
         }
     return {"cameras": status_info}
 

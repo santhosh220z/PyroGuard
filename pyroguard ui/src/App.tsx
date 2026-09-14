@@ -43,7 +43,6 @@ function Icon({ name, className = "" }: { name: string className?: string }) {
     moon: (
       <path d="M20.4 15.3A8.5 8.5 0 0 1 8.7 3.6 8.5 8.5 0 1 0 20.4 15.3Z" />
     ),
-    play: <path d="m9 7 7 5-7 5V7Z" fill="currentColor" stroke="none" />,
     more: (
       <>
         <circle cx="5" cy="12" r="1" fill="currentColor" />
@@ -67,14 +66,49 @@ function Icon({ name, className = "" }: { name: string className?: string }) {
   )
 }
 
+async function fetchJSON<T>(url: string): Promise<T | null> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    return (await res.json()) as T
+  } catch {
+    return null
+  }
+}
+
 function AppShell() {
   const [dark, setDark] = useState(
     () => localStorage.getItem("pyroguard-theme") === "dark",
   )
+  const [cameras, setCameras] = useState<any>(null)
+
   useEffect(
     () => localStorage.setItem("pyroguard-theme", dark ? "dark" : "light"),
     [dark],
   )
+
+  useEffect(() => {
+    let alive = true
+    const load = () =>
+      fetchJSON<any>("/cameras").then((d) => {
+        if (!alive || !d) return
+        setCameras(d.cameras)
+      })
+    load()
+    const t = setInterval(load, 5000)
+    return () => {
+      alive = false
+      clearInterval(t)
+    }
+  }, [])
+
+  const camList = cameras ? Object.values(cameras as any) : []
+  const camCount = camList.length
+  const connected = camList.filter(
+    (c: any) => c.status === "HEALTHY" || c.is_opened === true,
+  ).length
+  const allNominal = camCount > 0 && connected === camCount
+
   return (
     <div className={`app-shell ${dark ? "dark" : ""}`}>
       <aside className="sidebar">
@@ -92,8 +126,13 @@ function AppShell() {
           </Link>
         </nav>
         <div className="sidebar-status">
-          <span className="status-dot" />
-          All systems nominal<small>4 camera feeds online</small>
+          <span className={`status-dot ${allNominal ? "" : "warn"}`} />
+          {allNominal ? "All systems nominal" : "Attention needed"}
+          <small>
+            {camCount > 0
+              ? `${connected} of ${camCount} camera ${camCount === 1 ? "feed" : "feeds"} online`
+              : "Connecting to cameras…"}
+          </small>
         </div>
       </aside>
       <div className="page">
@@ -128,40 +167,118 @@ function AppShell() {
   )
 }
 
+function useClock() {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  return now
+}
+
 function Dashboard() {
-  const [acknowledged, setAcknowledged] = useState(false)
-  const [camera, setCamera] = useState("North entrance")
-  const [cameras, setCameras] = useState<{ id: string; name: string; status?: string; fps?: number }[]>([])
+  const now = useClock()
+
+  const [camera, setCamera] = useState("")
+  const [cameras, setCameras] = useState<{ id: string; name: string; status?: string; fps?: number; is_opened?: boolean }[]>([])
   const [feedOnline, setFeedOnline] = useState(true)
-  const [fps, setFps] = useState("—")
+  const [streamToken, setStreamToken] = useState(0)
+
+  // live detection + incidents polling
+  const [live, setLive] = useState<any>(null)
+  const [incidents, setIncidents] = useState<any[]>([])
+  const [acknowledgedId, setAcknowledgedId] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch("/cameras")
-      .then((r) => r.json())
-      .then((data) => {
-        const list = Object.entries(data.cameras || {}).map(([id, cam]: [string, any]) => ({
+    let alive = true
+    const load = async () => {
+      const [cam, det, inc] = await Promise.all([
+        fetchJSON<{ cameras: any }>("/cameras"),
+        fetchJSON<any>("/detection/live"),
+        fetchJSON<{ incidents: any[] }>("/incidents"),
+      ])
+      if (!alive) return
+
+      if (cam?.cameras) {
+        const list = Object.entries(cam.cameras).map(([id, c]: [string, any]) => ({
           id,
-          name: cam.name || id,
-          status: cam.status,
-          fps: cam.fps,
+          name: c.name || id,
+          status: c.status,
+          fps: c.fps,
+          is_opened: c.is_opened,
         }))
         setCameras(list)
-        if (list.length > 0) setCamera(list[0].name)
-        const live = list.find((c) => c.fps)
-        if (live) setFps(String(live.fps))
-      })
-      .catch(() => setFeedOnline(false))
+        setCamera((prev) => prev || list[0]?.name || "")
+      }
+      setLive(det)
+      setIncidents(inc?.incidents || [])
+    }
+    load()
+    const t = setInterval(load, 2000)
+    return () => {
+      alive = false
+      clearInterval(t)
+    }
   }, [])
 
+  const switchCamera = (name: string) => {
+    setCamera(name)
+    setStreamToken((t) => t + 1)
+  }
+
   const activeCam = cameras.find((c) => c.name === camera) || cameras[0] || { id: "CAM 01", name: camera, fps: 0 }
-  const activeFps = activeCam.fps ? String(activeCam.fps) : fps
-  const streamUrl = `/camera/stream?cam=${encodeURIComponent(activeCam.id || "camera_01")}&t=${Date.now()}`
+  const activeFps = activeCam.fps ? String(activeCam.fps) : "—"
+  const streamUrl = `/camera/stream?cam=${encodeURIComponent(activeCam.id || "camera_01")}&t=${streamToken}`
+
+  // Live prediction data
+  const liveCam: any = live?.cameras?.[activeCam.id || "camera_01"]
+  const best = liveCam?.best_detection || null
+  const predClass = best?.class || null
+  const predConf = best ? Math.round(best.confidence * 1000) / 10 : 0
+  const predState: string = liveCam?.state || "NORMAL"
+  const persisted = liveCam?.persisted_seconds ?? null
+
+  const predTitle =
+    predClass === "fire"
+      ? "Fire detected"
+      : predClass === "smoke"
+        ? "Smoke detected"
+        : "No event"
+  const predNote =
+    predClass
+      ? `${predClass[0].toUpperCase()}${predClass.slice(1)} detected at ${liveCam?.name || "the monitored area"}.`
+          + (persisted != null ? ` Detection has persisted for ${persisted.toFixed(0)} s.` : "")
+      : "Monitoring the live feed. No fire or smoke has been detected on this camera."
+  const scoreLabel =
+    predState === "FIRE_DETECTED"
+      ? "Fire confirmed"
+      : predState === "WARNING"
+        ? "Candidate — verifying"
+        : predClass
+          ? "Confidence"
+          : "No detection"
+
+  // Alert card from real incidents
+  const latestIncident: any = incidents[0] || null
+  const isAcknowledged = acknowledgedId !== null || latestIncident?.status === "ACKNOWLEDGED"
+  const hasAlert = live?.fire_confirmed === true || predState === "FIRE_DETECTED"
+
+  const acknowledge = async () => {
+    if (!latestIncident) return
+    await fetchJSON(`/incidents/${latestIncident.incident_id}/acknowledge`)
+    setAcknowledgedId(latestIncident.incident_id)
+  }
+
+  const coverageConnected = cameras.filter((c) => c.status === "HEALTHY" || c.is_opened).length
+  const coverageTotal = cameras.length
 
   return (
     <main className="dashboard">
       <div className="dashboard-head">
         <div>
-          <p className="eyebrow">{new Date().toLocaleString("en-GB", { dateStyle: "full", timeStyle: "short" })}</p>
+          <p className="eyebrow">
+            {now.toLocaleString("en-GB", { dateStyle: "full", timeStyle: "medium" })}
+          </p>
           <h1>Detection overview</h1>
           <p className="subcopy">
             Live fire and smoke intelligence across your monitored spaces.
@@ -177,7 +294,7 @@ function Dashboard() {
           <div className="feed-header">
             <div>
               <p className="eyebrow">Live camera</p>
-              <strong>{camera} · Warehouse A</strong>
+              <strong>{activeCam.name || camera} · Warehouse A</strong>
             </div>
             <button className="feed-more" aria-label="Feed options">
               <Icon name="more" />
@@ -200,9 +317,6 @@ function Dashboard() {
               <span>{activeCam.id || "CAM 01"}</span>
               <span>{activeFps} FPS</span>
             </div>
-            <button className="play">
-              <Icon name="play" />
-            </button>
           </div>
           <div className="feed-footer">
             <div className="feed-tabs">
@@ -210,22 +324,14 @@ function Dashboard() {
                 cameras.map((c) => (
                   <button
                     key={c.id}
-                    onClick={() => setCamera(c.name)}
+                    onClick={() => switchCamera(c.name)}
                     className={camera === c.name ? "selected" : ""}
                   >
                     {c.name}
                   </button>
                 ))
               ) : (
-                ["North entrance", "Loading bay", "Floor 2"].map((name) => (
-                  <button
-                    key={name}
-                    onClick={() => setCamera(name)}
-                    className={camera === name ? "selected" : ""}
-                  >
-                    {name}
-                  </button>
-                ))
+                <span className="feed-tabs-empty">Waiting for cameras…</span>
               )}
             </div>
             <button className="text-action">Open feed →</button>
@@ -235,19 +341,16 @@ function Dashboard() {
           <div className="card-icon">
             <Icon name="flame" />
           </div>
-          <p className="eyebrow">Prediction result</p>
-          <h2>Smoke detected</h2>
+          <p className="eyebrow">Prediction result · {live?.model_loaded ? "live model" : "loading model…"}</p>
+          <h2>{predTitle}</h2>
           <div className="score">
-            <strong>94.8%</strong>
-            <span>High confidence</span>
+            <strong>{predClass ? `${predConf}%` : "—"}</strong>
+            <span>{scoreLabel}</span>
           </div>
           <div className="meter">
-            <i />
+            <i style={{ width: `${Math.min(predConf, 100)}%` }} />
           </div>
-          <p className="prediction-note">
-            A growing smoke plume was identified near the north entrance.
-            Detection has persisted for 47 seconds.
-          </p>
+          <p className="prediction-note">{predNote}</p>
           <button className="dark-button">
             <Icon name="camera" />
             Review detection
@@ -255,54 +358,63 @@ function Dashboard() {
         </article>
       </section>
       <section className="secondary-grid">
-        <article className={`alert-card ${acknowledged ? "acknowledged" : ""}`}>
+        <article className={`alert-card ${isAcknowledged ? "acknowledged" : ""}`}>
           <div className="alert-icon">
-            <Icon name={acknowledged ? "shield" : "bell"} />
+            <Icon name={isAcknowledged ? "shield" : hasAlert ? "bell" : "camera"} />
           </div>
           <div className="alert-content">
             <p className="eyebrow">
-              {acknowledged
-                ? "Alert acknowledged"
-                : "Alert status · action needed"}
+              {latestIncident
+                ? `Latest incident · ${latestIncident.incident_id}`
+                : hasAlert
+                  ? "Alert status · action needed"
+                  : "Alert status · all clear"}
             </p>
             <h2>
-              {acknowledged
-                ? "Notifications are being tracked"
-                : "Smoke alert ready to send"}
+              {isAcknowledged
+                ? "Incident acknowledged"
+                : latestIncident
+                  ? `${latestIncident.event_type} alert · ${Math.round((latestIncident.confidence || 0) * 100)}% confidence`
+                  : hasAlert
+                    ? "Fire confirmed — alert ready"
+                    : "No active fire alerts"}
             </h2>
             <p>
-              {acknowledged
-                ? "Administrators and on-site safety leads have received the incident record."
-                : "Notify 3 administrators and 12 building occupants at Warehouse A with the camera location and predicted severity."}
+              {latestIncident
+                ? `Camera ${latestIncident.camera_id} · status ${latestIncident.status} · ${new Date(latestIncident.timestamp).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}`
+                : hasAlert
+                  ? "Fire metadata and incident record are ready to dispatch."
+                  : "Monitoring is live. Alerts are dispatched automatically when fire is confirmed."}
             </p>
-            {acknowledged && (
-              <small>15 recipients notified · 14:32:18 UTC</small>
+            {isAcknowledged && (
+              <small>Acknowledged · {new Date().toLocaleTimeString("en-GB")}</small>
             )}
           </div>
-          {!acknowledged && (
-            <button
-              onClick={() => setAcknowledged(true)}
-              className="alert-button"
-            >
-              Send alert now
+          {!isAcknowledged && latestIncident && (
+            <button onClick={acknowledge} className="alert-button">
+              Acknowledge incident
+            </button>
+          )}
+          {!isAcknowledged && !latestIncident && hasAlert && (
+            <button onClick={acknowledge} className="alert-button" disabled>
+              Dispatching…
             </button>
           )}
         </article>
         <article className="coverage-card">
           <p className="eyebrow">Protection coverage</p>
           <div>
-            <strong>04</strong>
+            <strong>{String(coverageConnected).padStart(2, "0")}</strong>
             <span>
-              of 04 feeds
+              of {String(coverageTotal).padStart(2, "0")} {coverageTotal === 1 ? "feed" : "feeds"}
               <br />
               connected
             </span>
           </div>
           <div className="coverage-bars">
-            <i />
-            <i />
-            <i />
-            <i />
+            {Array.from({ length: Math.max(coverageTotal, 1) }).map((_, i) => (
+              <i key={i} className={i < coverageConnected ? "" : "off"} />
+            ))}
           </div>
         </article>
       </section>

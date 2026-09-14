@@ -22,14 +22,25 @@ def get_project_info():
 
 def create_app():
     """Create and configure the FastAPI application"""
+    from contextlib import asynccontextmanager
     from fastapi import FastAPI
     from fastapi.staticfiles import StaticFiles
     from app.api.routes import router
-    
+
+    @asynccontextmanager
+    async def lifespan(app):
+        # Start the live detection background thread (single camera reader).
+        from app.detection.live_service import get_live_service
+        service = get_live_service()
+        service.start()
+        yield
+        service.stop()
+
     app = FastAPI(
         title="PyroGuard API",
         description="AI-powered real-time fire and smoke detection automation",
-        version="0.1.0"
+        version="0.1.0",
+        lifespan=lifespan,
     )
     
     app.include_router(router)
