@@ -1,5 +1,6 @@
 {
-  "description": "This detection system web app identifies and analyzes specific data patterns, providing users with actionable insights for improved decision-making.",
+  "title": "PyroGuard",
+  "description": "AI fire and smoke detection monitoring console.",
   "robots": {
     "index": false
   },

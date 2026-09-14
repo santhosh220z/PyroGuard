@@ -310,16 +310,19 @@ function Dashboard() {
   )
 }
 
-const router = createBrowserRouter([
-  {
-    Component: AppShell,
-    children: [
-      { index: true, Component: Dashboard },
-      { path: "about", Component: () => <Navigate to="/" replace /> },
-      { path: "*", Component: () => <Navigate to="/" replace /> },
-    ],
-  },
-])
+const router = createBrowserRouter(
+  [
+    {
+      Component: AppShell,
+      children: [
+        { index: true, Component: Dashboard },
+        { path: "about", Component: () => <Navigate to="/" replace /> },
+        { path: "*", Component: () => <Navigate to="/" replace /> },
+      ],
+    },
+  ],
+  { basename: "/dashboard" },
+)
 export default function App() {
   return <RouterProvider router={router} />
 }
