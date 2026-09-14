@@ -45,14 +45,9 @@ def create_app():
     
     app.include_router(router)
     
-    dashboard_dirs = [
-        PROJECT_ROOT / "pyroguard ui" / "dist",
-        PROJECT_ROOT / "dashboard",
-    ]
-    for dashboard_dir in dashboard_dirs:
-        if dashboard_dir.exists():
-            app.mount("/dashboard", StaticFiles(directory=str(dashboard_dir), html=True), name="dashboard")
-            break
+    dashboard_dist = PROJECT_ROOT / "pyroguard ui" / "dist"
+    if dashboard_dist.exists():
+        app.mount("/dashboard", StaticFiles(directory=str(dashboard_dist), html=True), name="dashboard")
     
     return app
 
