@@ -1,0 +1,10 @@
+{
+  "description": "This detection system web app identifies and analyzes specific data patterns, providing users with actionable insights for improved decision-making.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

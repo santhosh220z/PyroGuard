@@ -1,10 +1,16 @@
 # PyroGuard API Routes
+import cv2
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response, StreamingResponse
 
 router = APIRouter(tags=["pyroguard"])
 
 # Shared incident database instance (created lazily, reused across requests)
 _incident_db = None
+
+# Shared camera manager (opened once, kept alive for the live feed)
+_camera_manager = None
 
 
 def get_incident_db():
@@ -15,6 +21,69 @@ def get_incident_db():
         from app.config.config import settings
         _incident_db = IncidentDatabase(db_path=settings.DATABASE_PATH)
     return _incident_db
+
+
+def get_camera_manager():
+    """Get the shared camera manager instance (opens cameras once, not per request)."""
+    global _camera_manager
+    if _camera_manager is None:
+        from app.cameras.camera_manager import CameraManager
+        from app.config.config import settings
+        _camera_manager = CameraManager(cameras_config=settings.CAMERAS)
+    return _camera_manager
+
+
+def _primary_camera_id(manager) -> str:
+    """Return the first enabled camera id, or the first camera id."""
+    enabled = [c["id"] for c in manager.cameras if c.get("enabled")]
+    if enabled:
+        return enabled[0]
+    return manager.cameras[0]["id"] if manager.cameras else None
+
+
+@router.get("/camera/stream", summary="MJPEG live camera feed")
+async def camera_stream(cam: str = None):
+    """Stream a camera feed as multipart JPEG (MJPEG)."""
+    import time as _time
+
+    manager = get_camera_manager()
+    valid_ids = {c["id"] for c in manager.cameras}
+    cam_id = cam if cam in valid_ids else _primary_camera_id(manager)
+    if cam_id is None:
+        raise HTTPException(status_code=404, detail="No cameras configured")
+
+    def generate():
+        while True:
+            frame, _ = manager.get_frame(cam_id)
+            if frame is None:
+                _time.sleep(0.2)
+                continue
+            ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+            if not ok:
+                continue
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + buf.tobytes() + b"\r\n"
+            )
+
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
+@router.get("/camera/snapshot", summary="Latest camera frame as JPEG")
+async def camera_snapshot():
+    """Return the latest camera frame as a single JPEG image."""
+    manager = get_camera_manager()
+    cam_id = _primary_camera_id(manager)
+    frame, _ = manager.get_frame(cam_id)
+    if frame is None:
+        raise HTTPException(status_code=503, detail="Camera frame unavailable")
+    ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+    if not ok:
+        raise HTTPException(status_code=500, detail="Frame encoding failed")
+    return Response(content=buf.tobytes(), media_type="image/jpeg")
 
 
 @router.get("/health", summary="Health check endpoint")
@@ -39,9 +108,7 @@ async def system_status():
 @router.get("/cameras", summary="List cameras with health status")
 async def list_cameras():
     """List configured cameras and their health status."""
-    from app.config.config import settings
-    from app.cameras.camera_manager import CameraManager
-    manager = CameraManager(cameras_config=settings.CAMERAS)
+    manager = get_camera_manager()
     status_info = {}
     for cam in manager.cameras:
         cam_id = cam["id"]
@@ -54,7 +121,6 @@ async def list_cameras():
             "enabled": cam["enabled"],
             **cam_status
         }
-    manager.release_all()
     return {"cameras": status_info}
 
 
