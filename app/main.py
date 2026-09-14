@@ -23,6 +23,7 @@ def get_project_info():
 def create_app():
     """Create and configure the FastAPI application"""
     from fastapi import FastAPI
+    from fastapi.staticfiles import StaticFiles
     from app.api.routes import router
     
     app = FastAPI(
@@ -32,6 +33,10 @@ def create_app():
     )
     
     app.include_router(router)
+    
+    dashboard_dir = PROJECT_ROOT / "dashboard"
+    if dashboard_dir.exists():
+        app.mount("/dashboard", StaticFiles(directory=str(dashboard_dir), html=True), name="dashboard")
     
     return app
 

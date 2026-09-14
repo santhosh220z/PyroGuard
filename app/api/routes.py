@@ -11,7 +11,7 @@ def get_incident_db():
     """Get the shared incident database instance."""
     global _incident_db
     if _incident_db is None:
-        from app.database.incident_db import IncidentDatabase
+        from app.incidents.incident_db import IncidentDatabase
         from app.config.config import settings
         _incident_db = IncidentDatabase(db_path=settings.DATABASE_URL.replace("sqlite:///", ""))
     return _incident_db

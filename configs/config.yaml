@@ -14,6 +14,13 @@ ALERT_COOLDOWN: 30  # seconds
 CAMERA_SOURCE: 0
 IMAGE_SIZE: 640
 
+# Cameras to monitor (start with one; add more here later)
+CAMERAS:
+  - id: camera_01
+    name: Main Entrance
+    source: 0
+    enabled: true
+
 # Database settings
 DATABASE_URL: sqlite:///data/incidents/incidents.db
 

@@ -29,19 +29,19 @@ class CameraManager:
         self._initialize_cameras()
     
     def _default_cameras(self):
-        """Default camera configuration."""
+        """Default camera configuration (from config.yaml CAMERAS)."""
+        try:
+            from app.config.config import settings
+            if settings.CAMERAS:
+                return settings.CAMERAS
+        except ImportError:
+            pass
         return [
             {
                 "id": "camera_01",
                 "name": "Main Entrance",
                 "source": 0,
                 "enabled": True
-            },
-            {
-                "id": "camera_02",
-                "name": "Warehouse",
-                "source": "rtsp://camera-stream",
-                "enabled": False
             }
         ]
     

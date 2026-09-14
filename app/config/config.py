@@ -59,6 +59,7 @@ class Settings:
 
         # Camera
         self.CAMERA_SOURCE: str = _setting("CAMERA_SOURCE", "0", str)
+        self.CAMERAS: list = _setting("CAMERAS", [], list)
 
         # Database
         self.DATABASE_URL: str = _setting("DATABASE_URL", "sqlite:///data/incidents/incidents.db", str)
