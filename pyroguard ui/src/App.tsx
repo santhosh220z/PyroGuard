@@ -294,7 +294,7 @@ function Dashboard() {
           <div className="feed-header">
             <div>
               <p className="eyebrow">Live camera</p>
-              <strong>{activeCam.name || camera} · Warehouse A</strong>
+              <strong>{activeCam.name || camera}</strong>
             </div>
             <button className="feed-more" aria-label="Feed options">
               <Icon name="more" />
@@ -334,7 +334,14 @@ function Dashboard() {
                 <span className="feed-tabs-empty">Waiting for cameras…</span>
               )}
             </div>
-            <button className="text-action">Open feed →</button>
+            <a
+              className="text-action"
+              href={streamUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open live stream →
+            </a>
           </div>
         </article>
         <article className="prediction-card">
@@ -351,10 +358,10 @@ function Dashboard() {
             <i style={{ width: `${Math.min(predConf, 100)}%` }} />
           </div>
           <p className="prediction-note">{predNote}</p>
-          <button className="dark-button">
+          <a className="dark-button" href="/camera/snapshot" target="_blank" rel="noreferrer">
             <Icon name="camera" />
-            Review detection
-          </button>
+            View snapshot
+          </a>
         </article>
       </section>
       <section className="secondary-grid">
