@@ -12,8 +12,11 @@ const STATUS_BADGE_CLASS = {
 let paused = false;
 let timer = null;
 
-async function fetchJSON(path) {
-  const res = await fetch(`${API_BASE}${path}`, { headers: { Accept: "application/json" } });
+async function fetchJSON(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, { 
+    headers: { Accept: "application/json" },
+    ...options 
+  });
   if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
   return res.json();
 }
@@ -161,7 +164,7 @@ function actionButton(label, cssClass, incidentId, action) {
     const original = button.textContent;
     button.textContent = "Working…";
     try {
-      await fetchJSON(`/incidents/${encodeURIComponent(incidentId)}/${action}`);
+      await fetchJSON(`/incidents/${encodeURIComponent(incidentId)}/${action}`, { method: "POST" });
       showToast(`${label}d ${incidentId}`, false);
       await refresh(true);
     } catch (err) {

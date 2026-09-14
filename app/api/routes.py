@@ -13,7 +13,7 @@ def get_incident_db():
     if _incident_db is None:
         from app.incidents.incident_db import IncidentDatabase
         from app.config.config import settings
-        _incident_db = IncidentDatabase(db_path=settings.DATABASE_URL.replace("sqlite:///", ""))
+        _incident_db = IncidentDatabase(db_path=settings.DATABASE_PATH)
     return _incident_db
 
 
@@ -39,15 +39,20 @@ async def system_status():
 @router.get("/cameras", summary="List cameras with health status")
 async def list_cameras():
     """List configured cameras and their health status."""
+    from app.config.config import settings
     from app.cameras.camera_manager import CameraManager
-    manager = CameraManager()
+    manager = CameraManager(cameras_config=settings.CAMERAS)
     status_info = {}
     for cam in manager.cameras:
         cam_id = cam["id"]
+        cam_status = manager.get_camera_status(cam_id)
+        # For cameras not initialized (disabled), show DISABLED instead of ERROR
+        if "error" in cam_status and cam_status.get("error") == "Camera not initialized":
+            cam_status = {"status": "DISABLED", "failed_frames": 0}
         status_info[cam_id] = {
             "name": cam["name"],
             "enabled": cam["enabled"],
-            **manager.get_camera_status(cam_id)
+            **cam_status
         }
     manager.release_all()
     return {"cameras": status_info}

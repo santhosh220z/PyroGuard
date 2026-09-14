@@ -11,11 +11,13 @@ import cv2
 import numpy as np
 
 
+from app.config.config import settings
+
 class EvidenceCapture:
     """Captures snapshots, metadata, and event logs for confirmed incidents."""
 
-    def __init__(self, base_dir: str = "data/incidents"):
-        self.base_dir = Path(base_dir)
+    def __init__(self, base_dir: str | Path | None = None):
+        self.base_dir = Path(base_dir) if base_dir else (settings.DATABASE_PATH.parent / "evidence")
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def _safe_dirname(self, camera_id: str) -> str:

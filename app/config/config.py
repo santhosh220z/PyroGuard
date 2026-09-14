@@ -63,6 +63,8 @@ class Settings:
 
         # Database
         self.DATABASE_URL: str = _setting("DATABASE_URL", "sqlite:///data/incidents/incidents.db", str)
+        # Resolved database path (sqlite:/// prefix removed, relative paths anchored to PROJECT_ROOT)
+        self.DATABASE_PATH: Path = PROJECT_ROOT / self.DATABASE_URL.replace("sqlite:///", "")
 
         # Alert provider credentials (env only, never in YAML)
         self.SMTP_HOST: str = os.getenv("SMTP_HOST", "")

@@ -94,7 +94,13 @@ class DetectionPipeline:
         # 3. Send alert (async, non-blocking; failures never crash the pipeline)
         try:
             import asyncio
-            asyncio.run(self.alerts.send_alert(evidence_info["incident_id"], detection_data))
+            try:
+                loop = asyncio.get_running_loop()
+                # Running in async context - schedule as task
+                loop.create_task(self.alerts.send_alert(evidence_info["incident_id"], detection_data))
+            except RuntimeError:
+                # No running loop - safe to use asyncio.run
+                asyncio.run(self.alerts.send_alert(evidence_info["incident_id"], detection_data))
         except Exception as e:
             print(f"[{self.camera_id}] alert_failed: {e}")
 
