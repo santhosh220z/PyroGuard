@@ -33,7 +33,7 @@ def test_camera(source=0, camera_id="test_cam"):
         }
     ]
     
-    manager = CameraManager(cameras=cameras)
+    manager = CameraManager(cameras_config=cameras)
     
     # Try to get a frame
     frame, cid = manager.get_frame(camera_id)
@@ -50,7 +50,7 @@ def test_camera(source=0, camera_id="test_cam"):
 def main():
     parser = argparse.ArgumentParser(description="PyroGuard Camera Test")
     parser.add_argument("--source", type=str, default=0,
-                        help="Camera source (0 for webcam, or RTSP URL)")
+                        help="Camera source (0 for webcam, RTSP URL, or local video file path like demo/fire_demo.mp4)")
     parser.add_argument("--camera-id", type=str, default="test_cam",
                         help="Camera ID")
     

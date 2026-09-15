@@ -33,6 +33,14 @@ export default defineConfig(({ mode }) => {
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
       port: parseInt(process.env.PORT || '8443'),
       strictPort: true,
+      proxy: {
+        '/cameras': 'http://localhost:8000',
+        '/camera': 'http://localhost:8000',
+        '/detection': 'http://localhost:8000',
+        '/incidents': 'http://localhost:8000',
+        '/model': 'http://localhost:8000',
+        '/alerts': 'http://localhost:8000',
+      },
       watch: {
         ignored: [
           '**/.figma/**',

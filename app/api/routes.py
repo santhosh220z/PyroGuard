@@ -1,7 +1,10 @@
 # PyroGuard API Routes
 import cv2
+import re
+import shutil
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 
 router = APIRouter(tags=["pyroguard"])
@@ -69,10 +72,11 @@ async def camera_stream(cam: str = None):
 
 
 @router.get("/camera/snapshot", summary="Latest camera frame as JPEG")
-async def camera_snapshot():
+async def camera_snapshot(cam: str = None):
     """Return the latest camera frame as a single JPEG image."""
     manager = get_camera_manager()
-    cam_id = _primary_camera_id(manager)
+    valid_ids = {c["id"] for c in manager.cameras}
+    cam_id = cam if cam in valid_ids else _primary_camera_id(manager)
     from app.detection.live_service import get_live_service
     frame = get_live_service().get_frame(cam_id)
     if frame is None:
@@ -81,6 +85,57 @@ async def camera_snapshot():
     if not ok:
         raise HTTPException(status_code=500, detail="Frame encoding failed")
     return Response(content=buf.tobytes(), media_type="image/jpeg")
+
+
+@router.post("/camera/demo/upload", summary="Upload a demo video and feed it to the demo camera")
+async def upload_demo_video(file: UploadFile = File(...)):
+    """Save an uploaded video into demo/ and point the file-based camera at it."""
+    from app.config.config import PROJECT_ROOT
+
+    ALLOWED_EXT = {".mp4", ".avi", ".mkv", ".mov", ".webm", ".m4v", ".mpg", ".mpeg"}
+    original = Path(file.filename or "demo.mp4")
+    ext = original.suffix.lower()
+    if ext not in ALLOWED_EXT:
+        raise HTTPException(status_code=400, detail=f"Unsupported video type '{ext}'. Allowed: {sorted(ALLOWED_EXT)}")
+
+    demo_dir = PROJECT_ROOT / "demo"
+    demo_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_stem = re.sub(r"[^A-Za-z0-9_.-]", "_", original.stem)[:80] or "demo"
+    dest = demo_dir / f"{safe_stem}{ext}"
+    counter = 1
+    while dest.exists():
+        dest = demo_dir / f"{safe_stem}_{counter}{ext}"
+        counter += 1
+
+    try:
+        with dest.open("wb") as out:
+            shutil.copyfileobj(file.file, out)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Could not save upload: {e}")
+    finally:
+        await file.close()
+
+    from app.detection.live_service import get_live_service
+    manager = get_live_service().manager
+
+    demo_cam = next(
+        (c for c in manager.cameras if c.get("id") == "camera_01" and c.get("enabled")),
+        next((c for c in manager.cameras if manager.file_sources.get(c["id"])), None),
+    )
+    if demo_cam is None:
+        raise HTTPException(status_code=404, detail="No demo (file-based) camera configured")
+
+    result = manager.set_source(demo_cam["id"], str(dest))
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+
+    return {
+        "camera_id": demo_cam["id"],
+        "filename": dest.name,
+        "source": str(dest),
+        "status": result.get("status"),
+    }
 
 
 @router.get("/health", summary="Health check endpoint")

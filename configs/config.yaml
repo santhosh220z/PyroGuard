@@ -15,9 +15,14 @@ CAMERA_SOURCE: 0
 IMAGE_SIZE: 640
 
 # Cameras to monitor (start with one; add more here later)
+# source can be: an int (webcam index), an rtsp:// URL, or a local video file path (demo mode)
 CAMERAS:
   - id: camera_01
-    name: Main Entrance
+    name: Demo Feed
+    source: demo/fire_demo.mp4
+    enabled: true
+  - id: camera_02
+    name: Live Camera
     source: 0
     enabled: true
 

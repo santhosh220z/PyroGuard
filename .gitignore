@@ -38,6 +38,9 @@ data/incidents/
 # Logs
 logs/
 
+# Demo media (recordings used for demo mode)
+demo/
+
 # IDE
 .idea/
 .vscode/

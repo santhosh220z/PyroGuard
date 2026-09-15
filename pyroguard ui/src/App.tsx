@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   createBrowserRouter,
   Link,
@@ -48,6 +48,20 @@ function Icon({ name, className = "" }: { name: string className?: string }) {
         <circle cx="5" cy="12" r="1" fill="currentColor" />
         <circle cx="12" cy="12" r="1" fill="currentColor" />
         <circle cx="19" cy="12" r="1" fill="currentColor" />
+      </>
+    ),
+    upload: (
+      <>
+        <path d="M12 16V4M12 4l-4 4M12 4l4 4" />
+        <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+      </>
+    ),
+    flip: (
+      <>
+        <path d="M4 12a8 8 0 0 1 13.5-5.7L20 8" />
+        <path d="M20 3v5h-5" />
+        <path d="M20 12a8 8 0 0 1-13.5 5.7L4 16" />
+        <path d="M4 21v-5h5" />
       </>
     ),
   }
@@ -180,9 +194,15 @@ function Dashboard() {
   const now = useClock()
 
   const [camera, setCamera] = useState("")
-  const [cameras, setCameras] = useState<{ id: string; name: string; status?: string; fps?: number; is_opened?: boolean }[]>([])
+  const [cameras, setCameras] = useState<{ id: string; name: string; status?: string; fps?: number; is_opened?: boolean; is_file_source?: boolean; source?: string }[]>([])
   const [feedOnline, setFeedOnline] = useState(true)
   const [streamToken, setStreamToken] = useState(0)
+  const [feedMenuOpen, setFeedMenuOpen] = useState(false)
+  const [demoUploading, setDemoUploading] = useState(false)
+  const [demoUploaded, setDemoUploaded] = useState<string | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   // live detection + incidents polling
   const [live, setLive] = useState<any>(null)
@@ -206,6 +226,8 @@ function Dashboard() {
           status: c.status,
           fps: c.fps,
           is_opened: c.is_opened,
+          is_file_source: c.is_file_source,
+          source: c.source,
         }))
         setCameras(list)
         setCamera((prev) => prev || list[0]?.name || "")
@@ -225,6 +247,45 @@ function Dashboard() {
     setCamera(name)
     setStreamToken((t) => t + 1)
   }
+
+  const uploadDemoVideo = async (file: File) => {
+    const fd = new FormData()
+    fd.append("file", file)
+    setDemoUploading(true)
+    setUploadError(null)
+    try {
+      const res = await fetch("/camera/demo/upload", { method: "POST", body: fd })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        setUploadError(data?.detail || `Upload failed (${res.status})`)
+        return
+      }
+      // switch to the demo feed so the new clip is visible immediately
+      const demoCam = cameras.find((c) => c.is_file_source)
+      if (demoCam) switchCamera(demoCam.name)
+      else if (data?.camera_id) {
+        const c = cameras.find((c) => c.id === data.camera_id)
+        if (c) switchCamera(c.name)
+      }
+    } catch (err) {
+      setUploadError(String(err))
+    } finally {
+      setDemoUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
+
+  // close the feed menu when clicking elsewhere
+  useEffect(() => {
+    if (!feedMenuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setFeedMenuOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", onDown)
+    return () => document.removeEventListener("mousedown", onDown)
+  }, [feedMenuOpen])
 
   const activeCam = cameras.find((c) => c.name === camera) || cameras[0] || { id: "CAM 01", name: camera, fps: 0 }
   const activeFps = activeCam.fps ? String(activeCam.fps) : "—"
@@ -296,10 +357,65 @@ function Dashboard() {
               <p className="eyebrow">Live camera</p>
               <strong>{activeCam.name || camera}</strong>
             </div>
-            <button className="feed-more" aria-label="Feed options">
-              <Icon name="more" />
-            </button>
+            <div className="feed-menu" ref={menuRef}>
+              <button
+                className={`feed-more ${feedMenuOpen ? "open" : ""}`}
+                aria-label="Feed options"
+                aria-expanded={feedMenuOpen}
+                onClick={() => setFeedMenuOpen((o) => !o)}
+              >
+                <Icon name="more" />
+              </button>
+              {feedMenuOpen && (
+                <div className="feed-menu-pop">
+                  <button
+                    className="feed-menu-item"
+                    disabled={demoUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Icon name="upload" />
+                    {demoUploading ? "Uploading demo video…" : "Upload demo video"}
+                  </button>
+                  <a
+                    className="feed-menu-item"
+                    href={`/camera/snapshot?cam=${encodeURIComponent(activeCam.id || "")}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setFeedMenuOpen(false)}
+                  >
+                    <Icon name="camera" />
+                    View snapshot
+                  </a>
+                  <a
+                    className="feed-menu-item"
+                    href={streamUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setFeedMenuOpen(false)}
+                  >
+                    <Icon name="flip" />
+                    Open raw stream
+                  </a>
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) uploadDemoVideo(f)
+                }}
+              />
+            </div>
           </div>
+          {uploadError && !demoUploading && (
+            <div className="feed-status error">
+              <span>Demo upload failed · {uploadError}</span>
+              <button onClick={() => setUploadError(null)}>Dismiss</button>
+            </div>
+          )}
           <div className="feed-visual">
             {feedOnline ? (
               <img
@@ -339,6 +455,7 @@ function Dashboard() {
               href={streamUrl}
               target="_blank"
               rel="noreferrer"
+              onClick={() => setFeedMenuOpen(false)}
             >
               Open live stream →
             </a>
