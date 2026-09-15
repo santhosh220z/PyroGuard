@@ -52,28 +52,9 @@ class Settings:
         self.CONFIRMATION_FRAMES: int = _setting("CONFIRMATION_FRAMES", 3, int)
         self.CONFIRMATION_WINDOW: int = _setting("CONFIRMATION_WINDOW", 5, int)
 
-        # Alerts
-        self.ALERT_COOLDOWN: int = _setting("ALERT_COOLDOWN", 30, int)
-        self.CIRCUIT_BREAKER_THRESHOLD: int = _setting("CIRCUIT_BREAKER_THRESHOLD", 5, int)
-        self.CIRCUIT_RESET_TIMEOUT: int = _setting("CIRCUIT_RESET_TIMEOUT", 60, int)
-
         # Camera
         self.CAMERA_SOURCE: str = _setting("CAMERA_SOURCE", "0", str)
         self.CAMERAS: list = _setting("CAMERAS", [], list)
-
-        # Database
-        self.DATABASE_URL: str = _setting("DATABASE_URL", "sqlite:///data/incidents/incidents.db", str)
-        # Resolved database path (sqlite:/// prefix removed, relative paths anchored to PROJECT_ROOT)
-        self.DATABASE_PATH: Path = PROJECT_ROOT / self.DATABASE_URL.replace("sqlite:///", "")
-
-        # Alert provider credentials (env only, never in YAML)
-        self.SMTP_HOST: str = os.getenv("SMTP_HOST", "")
-        self.SMTP_PORT: int = _setting("SMTP_PORT", 587, int)
-        self.SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
-        self.SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
-        self.TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-        self.TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
-        self.WEBHOOK_URL: str = os.getenv("WEBHOOK_URL", "")
 
         # Logging
         self.LOG_LEVEL: str = _setting("LOG_LEVEL", "INFO", str)

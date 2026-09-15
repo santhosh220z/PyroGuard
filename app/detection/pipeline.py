@@ -1,17 +1,12 @@
 # PyroGuard Real-Time Detection Pipeline
-# Ties together camera capture, detection, temporal verification,
-# evidence capture, incident database, and alert automation.
+# Ties together camera capture, detection, and temporal verification.
 
 import time
-from datetime import datetime
 
 import cv2
 
 from app.cameras.camera_manager import CameraManager
 from app.detection.detection import DetectionModel
-from app.alerts.alert_service import AlertService
-from app.incidents.incident_db import IncidentDatabase
-from app.incidents.evidence_capture import EvidenceCapture
 
 # System state (per dashboard spec)
 STATE_NORMAL = "NORMAL"
@@ -22,15 +17,10 @@ STATE_FIRE_DETECTED = "FIRE_DETECTED"
 class DetectionPipeline:
     """Real-time fire/smoke detection pipeline for a single camera."""
 
-    def __init__(self, camera_config: dict, model: DetectionModel,
-                 db: IncidentDatabase, evidence: EvidenceCapture,
-                 alerts: AlertService, display: bool = True):
+    def __init__(self, camera_config: dict, model: DetectionModel, display: bool = True):
         self.camera_config = camera_config
         self.camera_id = camera_config["id"]
         self.model = model
-        self.db = db
-        self.evidence = evidence
-        self.alerts = alerts
         self.display = display
 
         self.state = STATE_NORMAL
@@ -47,8 +37,10 @@ class DetectionPipeline:
         self.current_confidence = max((d["confidence"] for d in detections), default=0.0)
 
         if verification["fire_confirmed"]:
-            # Fire just confirmed - run the alert workflow
-            self._handle_fire_confirmed(frame, verification["detection_data"])
+            detection_data = verification["detection_data"] or {}
+            print(f"[{self.camera_id}] fire_confirmed "
+                  f"class={detection_data.get('class')} "
+                  f"confidence={detection_data.get('confidence', 0.0):.3f}")
             self.state = STATE_FIRE_DETECTED
         elif verification["confirmation_counter"] > 0:
             # Candidate fire detected but not yet confirmed
@@ -59,50 +51,6 @@ class DetectionPipeline:
             self.state = STATE_NORMAL
 
         return frame
-
-    def _handle_fire_confirmed(self, frame, detection_data):
-        """Alert workflow: capture evidence, create incident, send alert."""
-        detection_data = detection_data or {
-            "class": "fire", "confidence": 0.0, "bbox": None, "timestamp": time.time()
-        }
-        print(f"[{self.camera_id}] fire_confirmed "
-              f"class={detection_data['class']} confidence={detection_data['confidence']:.3f}")
-
-        # 1. Capture evidence (snapshot, metadata, event log)
-        evidence_info = self.evidence.capture(
-            frame=frame,
-            camera_id=self.camera_id,
-            detected_class=detection_data["class"],
-            confidence=detection_data["confidence"],
-            bounding_box=detection_data.get("bbox"),
-        )
-
-        # 2. Create incident in database
-        try:
-            self.db.create_incident(
-                incident_id=evidence_info["incident_id"],
-                timestamp=datetime.now().isoformat(),
-                camera_id=self.camera_id,
-                event_type=detection_data["class"],
-                confidence=detection_data["confidence"],
-                snapshot_path=evidence_info["snapshot_path"],
-            )
-            print(f"[{self.camera_id}] incident_created {evidence_info['incident_id']}")
-        except Exception as e:
-            print(f"[{self.camera_id}] database_failure: {e}")
-
-        # 3. Send alert (async, non-blocking; failures never crash the pipeline)
-        try:
-            import asyncio
-            try:
-                loop = asyncio.get_running_loop()
-                # Running in async context - schedule as task
-                loop.create_task(self.alerts.send_alert(evidence_info["incident_id"], detection_data))
-            except RuntimeError:
-                # No running loop - safe to use asyncio.run
-                asyncio.run(self.alerts.send_alert(evidence_info["incident_id"], detection_data))
-        except Exception as e:
-            print(f"[{self.camera_id}] alert_failed: {e}")
 
     def draw_overlays(self, frame):
         """Draw bounding boxes and status overlay on the frame."""
@@ -165,13 +113,9 @@ def run_pipeline(camera_source=0, camera_id="camera_01", camera_name="Camera",
     model = DetectionModel(model_path=model_path)
     model.initialize()
 
-    db = IncidentDatabase()
-    evidence = EvidenceCapture()
-    alerts = AlertService()
-
     pipeline = DetectionPipeline(
         camera_config={"id": camera_id, "name": camera_name, "source": camera_source, "enabled": True},
-        model=model, db=db, evidence=evidence, alerts=alerts, display=display,
+        model=model, display=display,
     )
     pipeline.run()
     return pipeline

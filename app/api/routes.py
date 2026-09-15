@@ -1,26 +1,10 @@
 # PyroGuard API Routes
 import cv2
-import re
-import shutil
-from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response, StreamingResponse
 
 router = APIRouter(tags=["pyroguard"])
-
-# Shared incident database instance (created lazily, reused across requests)
-_incident_db = None
-
-
-def get_incident_db():
-    """Get the shared incident database instance."""
-    global _incident_db
-    if _incident_db is None:
-        from app.incidents.incident_db import IncidentDatabase
-        from app.config.config import settings
-        _incident_db = IncidentDatabase(db_path=settings.DATABASE_PATH)
-    return _incident_db
 
 
 def get_camera_manager():
@@ -38,13 +22,12 @@ def _primary_camera_id(manager) -> str:
 
 
 @router.get("/camera/stream", summary="MJPEG live camera feed")
-async def camera_stream(cam: str = None):
-    """Stream a camera feed as multipart JPEG (MJPEG)."""
+async def camera_stream():
+    """Stream the primary camera feed as multipart JPEG (MJPEG)."""
     import time as _time
 
     manager = get_camera_manager()
-    valid_ids = {c["id"] for c in manager.cameras}
-    cam_id = cam if cam in valid_ids else _primary_camera_id(manager)
+    cam_id = _primary_camera_id(manager)
     if cam_id is None:
         raise HTTPException(status_code=404, detail="No cameras configured")
 
@@ -72,11 +55,10 @@ async def camera_stream(cam: str = None):
 
 
 @router.get("/camera/snapshot", summary="Latest camera frame as JPEG")
-async def camera_snapshot(cam: str = None):
+async def camera_snapshot():
     """Return the latest camera frame as a single JPEG image."""
     manager = get_camera_manager()
-    valid_ids = {c["id"] for c in manager.cameras}
-    cam_id = cam if cam in valid_ids else _primary_camera_id(manager)
+    cam_id = _primary_camera_id(manager)
     from app.detection.live_service import get_live_service
     frame = get_live_service().get_frame(cam_id)
     if frame is None:
@@ -85,57 +67,6 @@ async def camera_snapshot(cam: str = None):
     if not ok:
         raise HTTPException(status_code=500, detail="Frame encoding failed")
     return Response(content=buf.tobytes(), media_type="image/jpeg")
-
-
-@router.post("/camera/demo/upload", summary="Upload a demo video and feed it to the demo camera")
-async def upload_demo_video(file: UploadFile = File(...)):
-    """Save an uploaded video into demo/ and point the file-based camera at it."""
-    from app.config.config import PROJECT_ROOT
-
-    ALLOWED_EXT = {".mp4", ".avi", ".mkv", ".mov", ".webm", ".m4v", ".mpg", ".mpeg"}
-    original = Path(file.filename or "demo.mp4")
-    ext = original.suffix.lower()
-    if ext not in ALLOWED_EXT:
-        raise HTTPException(status_code=400, detail=f"Unsupported video type '{ext}'. Allowed: {sorted(ALLOWED_EXT)}")
-
-    demo_dir = PROJECT_ROOT / "demo"
-    demo_dir.mkdir(parents=True, exist_ok=True)
-
-    safe_stem = re.sub(r"[^A-Za-z0-9_.-]", "_", original.stem)[:80] or "demo"
-    dest = demo_dir / f"{safe_stem}{ext}"
-    counter = 1
-    while dest.exists():
-        dest = demo_dir / f"{safe_stem}_{counter}{ext}"
-        counter += 1
-
-    try:
-        with dest.open("wb") as out:
-            shutil.copyfileobj(file.file, out)
-    except OSError as e:
-        raise HTTPException(status_code=500, detail=f"Could not save upload: {e}")
-    finally:
-        await file.close()
-
-    from app.detection.live_service import get_live_service
-    manager = get_live_service().manager
-
-    demo_cam = next(
-        (c for c in manager.cameras if c.get("id") == "camera_01" and c.get("enabled")),
-        next((c for c in manager.cameras if manager.file_sources.get(c["id"])), None),
-    )
-    if demo_cam is None:
-        raise HTTPException(status_code=404, detail="No demo (file-based) camera configured")
-
-    result = manager.set_source(demo_cam["id"], str(dest))
-    if "error" in result:
-        raise HTTPException(status_code=500, detail=result["error"])
-
-    return {
-        "camera_id": demo_cam["id"],
-        "filename": dest.name,
-        "source": str(dest),
-        "status": result.get("status"),
-    }
 
 
 @router.get("/health", summary="Health check endpoint")
@@ -184,43 +115,6 @@ async def list_cameras():
             "fps": service_fps.get(cam_id, 0.0),
         }
     return {"cameras": status_info}
-
-
-@router.get("/incidents", summary="List incidents")
-async def list_incidents(status: str = None):
-    """List all incidents, optionally filtered by status."""
-    db = get_incident_db()
-    return {"incidents": db.list_incidents(status=status)}
-
-
-@router.get("/incidents/{incident_id}", summary="Get incident by ID")
-async def get_incident(incident_id: str):
-    """Get incident by ID."""
-    db = get_incident_db()
-    incident = db.get_incident(incident_id)
-    if "error" in incident:
-        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
-    return {"incident": incident}
-
-
-@router.post("/incidents/{incident_id}/acknowledge", summary="Acknowledge incident")
-async def acknowledge_incident(incident_id: str):
-    """Acknowledge an incident."""
-    db = get_incident_db()
-    success = db.update_status(incident_id, "ACKNOWLEDGED")
-    if not success:
-        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
-    return {"incident_id": incident_id, "status": "ACKNOWLEDGED"}
-
-
-@router.post("/incidents/{incident_id}/resolve", summary="Resolve incident")
-async def resolve_incident(incident_id: str):
-    """Resolve an incident."""
-    db = get_incident_db()
-    success = db.update_status(incident_id, "RESOLVED")
-    if not success:
-        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
-    return {"incident_id": incident_id, "status": "RESOLVED"}
 
 
 @router.get("/model/status", summary="Model status")

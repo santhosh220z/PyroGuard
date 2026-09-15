@@ -1,1 +1,0 @@
-# PyroGuard Alerts Module

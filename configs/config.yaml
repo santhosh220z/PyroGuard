@@ -14,22 +14,17 @@ ALERT_COOLDOWN: 30  # seconds
 CAMERA_SOURCE: 0
 IMAGE_SIZE: 640
 
-# Cameras to monitor (start with one; add more here later)
-# source can be: an int (webcam index), an rtsp:// URL, or a local video file path (demo mode)
+# Cameras to monitor (single live webcam; rtsp:// upgrade can come later)
 CAMERAS:
   - id: camera_01
-    name: Demo Feed
-    source: demo/fire_demo.mp4
-    enabled: true
-  - id: camera_02
     name: Live Camera
     source: 0
     enabled: true
 
-# Database settings
+# Database settings (unused while automations are deferred)
 DATABASE_URL: sqlite:///data/incidents/incidents.db
 
-# Alert settings
+# Alert settings (deferred; automations come later)
 SMTP_HOST: ""
 SMTP_PORT: 587
 SMTP_USERNAME: ""

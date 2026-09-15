@@ -1,4 +1,4 @@
-# PyroGuard - AI Fire Detection & Alert Automation
+# PyroGuard - AI Fire & Smoke Detection
 # Main application entry point
 
 import sys
@@ -15,8 +15,8 @@ def get_project_info():
     """Return project information"""
     return {
         "name": "PyroGuard",
-        "title": "AI Fire Detection & Alert Automation",
-        "type": "AI-powered real-time safety automation",
+        "title": "AI Fire & Smoke Detection",
+        "type": "AI-powered real-time fire and smoke detection",
         "status": "initializing"
     }
 
@@ -38,7 +38,7 @@ def create_app():
 
     app = FastAPI(
         title="PyroGuard API",
-        description="AI-powered real-time fire and smoke detection automation",
+        description="AI-powered real-time fire and smoke detection",
         version="0.1.0",
         lifespan=lifespan,
     )
