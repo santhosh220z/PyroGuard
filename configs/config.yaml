@@ -1,7 +1,7 @@
 # PyroGuard Configuration
 
 # Model settings
-MODEL_PATH: models/fire_smoke_yolo.pt
+MODEL_PATH: models/fire_smoke_yolo11s.pt
 CONFIDENCE_THRESHOLD: 0.25
 IOU_THRESHOLD: 0.45
 

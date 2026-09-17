@@ -57,3 +57,9 @@ print(f"PyroGuard v0.1.0 - {project_info['title']}")
 print(f"Project: {project_info['name']} - {project_info['type']}")
 print(f"Model: {settings.MODEL_PATH}")
 print(f"Confidence threshold: {settings.CONFIDENCE_THRESHOLD}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(create_app(), host="0.0.0.0", port=8000, log_level="info")
