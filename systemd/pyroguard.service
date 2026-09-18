@@ -1,0 +1,41 @@
+# PyroGuard Systemd Service
+# For bare-metal deployment (alternative to Docker)
+
+[Unit]
+Description=PyroGuard AI Fire & Smoke Detection
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pyroguard
+Group=pyroguard
+WorkingDirectory=/opt/pyroguard
+EnvironmentFile=/etc/pyroguard/.env
+ExecStart=/opt/pyroguard/.venv/bin/python -m app.main
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pyroguard
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/pyroguard/data /opt/pyroguard/models /opt/pyroguard/runs /opt/pyroguard/datasets
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
