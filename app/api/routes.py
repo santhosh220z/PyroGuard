@@ -3,11 +3,12 @@ import cv2
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import Response, StreamingResponse, FileResponse
 from pydantic import BaseModel
 
-from app.config.security import get_current_user, require_operator, require_admin, limiter, rate_limit
+from app.config.security import get_current_user, limiter, rate_limit
+from app.api.auth import require_operator, require_admin
 
 router = APIRouter(tags=["pyroguard"])
 
@@ -152,6 +153,7 @@ async def model_status():
 @router.get("/incidents", summary="List incidents")
 @rate_limit("60/minute")
 async def list_incidents(
+    request: Request,
     status: Optional[str] = Query(None, description="Filter by status"),
     camera_id: Optional[str] = Query(None, description="Filter by camera"),
     severity: Optional[str] = Query(None, description="Filter by severity"),
@@ -179,7 +181,10 @@ async def list_incidents(
 
 @router.get("/incidents/stats", summary="Incident statistics")
 @rate_limit("60/minute")
-async def incident_stats(user: dict = Depends(get_current_user)):
+async def incident_stats(
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
     """Get incident statistics for dashboard."""
     from app.incidents import incident_manager
     return incident_manager.get_stats()
@@ -187,7 +192,11 @@ async def incident_stats(user: dict = Depends(get_current_user)):
 
 @router.get("/incidents/{incident_id}", summary="Get incident details")
 @rate_limit("60/minute")
-async def get_incident(incident_id: int, user: dict = Depends(get_current_user)):
+async def get_incident(
+    request: Request,
+    incident_id: int,
+    user: dict = Depends(get_current_user),
+):
     """Get detailed incident information."""
     from app.incidents import incident_manager
     incident = incident_manager.get_incident(incident_id)
@@ -227,7 +236,11 @@ async def get_incident(incident_id: int, user: dict = Depends(get_current_user))
 
 @router.get("/incidents/{incident_id}/snapshot", summary="Get incident snapshot")
 @rate_limit("60/minute")
-async def get_incident_snapshot(incident_id: int, user: dict = Depends(get_current_user)):
+async def get_incident_snapshot(
+    request: Request,
+    incident_id: int,
+    user: dict = Depends(get_current_user),
+):
     """Get the incident snapshot image."""
     from app.incidents import incident_manager
     incident = incident_manager.get_incident(incident_id)
@@ -245,13 +258,14 @@ async def get_incident_snapshot(incident_id: int, user: dict = Depends(get_curre
 @router.post("/incidents/{incident_id}/acknowledge", summary="Acknowledge incident")
 @rate_limit("30/minute")
 async def acknowledge_incident_endpoint(
+    request: Request,
     incident_id: int,
-    request: AcknowledgeRequest,
+    body: AcknowledgeRequest,
     user: dict = Depends(require_operator),
 ):
     """Acknowledge an incident."""
     from app.incidents import incident_manager
-    success = incident_manager.acknowledge(incident_id, request.user or user["sub"])
+    success = incident_manager.acknowledge(incident_id, body.user or user["sub"])
     if not success:
         raise HTTPException(status_code=404, detail="Incident not found")
     return {"success": True, "message": "Incident acknowledged"}
@@ -260,13 +274,14 @@ async def acknowledge_incident_endpoint(
 @router.post("/incidents/{incident_id}/resolve", summary="Resolve incident")
 @rate_limit("30/minute")
 async def resolve_incident_endpoint(
+    request: Request,
     incident_id: int,
-    request: ResolveRequest,
+    body: ResolveRequest,
     user: dict = Depends(require_operator),
 ):
     """Resolve an incident (or mark as false positive)."""
     from app.incidents import incident_manager
-    success = incident_manager.resolve(incident_id, request.user or user["sub"], request.false_positive)
+    success = incident_manager.resolve(incident_id, body.user or user["sub"], body.false_positive)
     if not success:
         raise HTTPException(status_code=404, detail="Incident not found")
     return {"success": True, "message": "Incident resolved"}
@@ -276,7 +291,10 @@ async def resolve_incident_endpoint(
 
 @router.post("/alerts/test", summary="Test all enabled alert channels")
 @rate_limit("3/minute")
-async def test_alerts(user: dict = Depends(require_admin)):
+async def test_alerts(
+    request: Request,
+    user: dict = Depends(require_admin),
+):
     """Test alert channels (DRY_RUN safe)."""
     from app.config.config import settings
     from app.alerts import get_providers

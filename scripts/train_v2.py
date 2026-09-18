@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-PyroGuard YOLOv11s Training Script
-Trains a YOLOv11s (small) model for fire and smoke detection.
-Saves as models/fire_smoke_yolo11s.pt - keeps the existing yolov11n model intact.
+PyroGuard YOLOv11s Training Script v2 (Improved Config)
+Trains YOLOv11s at 960px resolution for better small-object detection.
+Saves as models/fire_smoke_yolo11s_v2.pt - keeps all existing models intact.
 Supports resume from checkpoint: run with --resume to continue from last checkpoint.
+
+Config: imgsz=960, batch=8, epochs=100, patience=30, cosine LR, warmup=5
 """
 
 import os
@@ -19,17 +21,28 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts.prepare_dataset import main as prepare_dataset_main
 
-# Training configuration for YOLOv11s
+# Training configuration for YOLOv11s v2 (improved)
 TRAINING_CONFIG = {
-    "image_size": 640,
-    "batch_size": 16,
-    "epochs": 50,
+    "image_size": 960,
+    "batch_size": 8,
+    "epochs": 100,
     "learning_rate": 0.01,
     "optimizer": "SGD",
     "augmentation": True,
     "device": "cuda",
     "workers": 4,
-    "pretrained_weights": "yolo11s.pt",  # YOLOv11s pretrained weights
+    "pretrained_weights": "yolo11s.pt",
+    # Advanced LR schedule
+    "cosine_lr": True,
+    "warmup_epochs": 5,
+    "warmup_momentum": 0.8,
+    "warmup_bias_lr": 0.1,
+    # Early stopping
+    "patience": 30,
+    # Save checkpoints
+    "save_period": 5,
+    # Mixed precision for VRAM efficiency
+    "amp": True,
 }
 
 # Global flag for graceful shutdown
@@ -53,7 +66,6 @@ def find_latest_run_dir(name_prefix: str) -> Path | None:
     if not run_dirs:
         return None
     
-    # Sort by modification time, newest first
     run_dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
     return run_dirs[0]
 
@@ -64,7 +76,6 @@ def get_last_checkpoint(run_dir: Path) -> Path | None:
     if not weights_dir.exists():
         return None
     
-    # Prefer last.pt (most recent), then best.pt
     last_ckpt = weights_dir / "last.pt"
     if last_ckpt.exists():
         return last_ckpt
@@ -73,7 +84,6 @@ def get_last_checkpoint(run_dir: Path) -> Path | None:
     if best_ckpt.exists():
         return best_ckpt
     
-    # Any epoch checkpoint
     epoch_ckpts = list(weights_dir.glob("epoch_*.pt"))
     if epoch_ckpts:
         epoch_ckpts.sort(key=lambda p: p.stat().st_mtime, reverse=True)
@@ -82,18 +92,18 @@ def get_last_checkpoint(run_dir: Path) -> Path | None:
     return None
 
 
-def run_yolo11s_training(resume: bool = False):
-    """Execute the YOLOv11s training pipeline with resume support."""
+def run_yolo11s_training_v2(resume: bool = False):
+    """Execute the YOLOv11s v2 training pipeline with resume support."""
     print("=" * 60)
-    print("PYROGUARD YOLOv11s MODEL TRAINING")
+    print("PYROGUARD YOLOv11s v2 MODEL TRAINING (960px)")
     print("=" * 60)
+    print(f"Config: imgsz={TRAINING_CONFIG['image_size']}, batch={TRAINING_CONFIG['batch_size']}, "
+          f"epochs={TRAINING_CONFIG['epochs']}, patience={TRAINING_CONFIG['patience']}")
     print()
     
-    # Set up signal handler for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    # Ensure dataset is prepared
     print("STAGE 1: Preparing dataset...")
     if not prepare_dataset_main():
         print("❌ Dataset preparation failed. Aborting.")
@@ -101,17 +111,15 @@ def run_yolo11s_training(resume: bool = False):
     print("✅ Dataset preparation complete")
     print()
     
-    # Train model
-    print("STAGE 2: Training YOLOv11s model...")
+    print("STAGE 2: Training YOLOv11s v2 model...")
     try:
         from ultralytics import YOLO
         import torch
         
         config = TRAINING_CONFIG
-        final_model_path = PROJECT_ROOT / "models" / "fire_smoke_yolo11s.pt"
-        run_name = "yolo11s_fire_smoke"
+        final_model_path = PROJECT_ROOT / "models" / "fire_smoke_yolo11s_v2.pt"
+        run_name = "yolo11s_fire_smoke_v2"
         
-        # Determine device
         device = config["device"]
         if not torch.cuda.is_available() and device == "cuda":
             device = "cpu"
@@ -121,10 +129,9 @@ def run_yolo11s_training(resume: bool = False):
         
         # Handle resume logic
         start_model = config["pretrained_weights"]
-        resume_from = None
+        resume_from = False
         
         if resume:
-            # Find latest run directory
             latest_run = find_latest_run_dir(run_name)
             if latest_run:
                 last_ckpt = get_last_checkpoint(latest_run)
@@ -137,11 +144,9 @@ def run_yolo11s_training(resume: bool = False):
             else:
                 print("⚠️  No previous run found, starting fresh")
         
-        # Load model (either pretrained or from checkpoint)
         print(f"Loading weights: {start_model}")
         model = YOLO(start_model)
         
-        # Train the model
         print("Starting training...")
         print("Press Ctrl+C to stop and save checkpoint for resume later")
         print()
@@ -158,7 +163,13 @@ def run_yolo11s_training(resume: bool = False):
             "augment": config["augmentation"],
             "verbose": True,
             "name": run_name,
-            "save_period": 5,  # Save checkpoint every 5 epochs
+            "save_period": config["save_period"],
+            "patience": config["patience"],
+            "cos_lr": config["cosine_lr"],
+            "warmup_epochs": config["warmup_epochs"],
+            "warmup_momentum": config["warmup_momentum"],
+            "warmup_bias_lr": config["warmup_bias_lr"],
+            "amp": config["amp"],
         }
         
         if resume_from:
@@ -169,19 +180,18 @@ def run_yolo11s_training(resume: bool = False):
         print(f"\n✅ Training complete. Best model saved to {results.save_dir}")
         print()
         
-        # Copy best model to project models directory
         best_model_path = Path(results.save_dir) / "weights" / "best.pt"
         
         if best_model_path.exists():
             shutil.copy2(str(best_model_path), str(final_model_path))
-            print(f"✅ YOLOv11s model saved to {final_model_path}")
+            print(f"✅ YOLOv11s v2 model saved to {final_model_path}")
         else:
             print(f"⚠️  Best model not found at expected path: {best_model_path}")
             return False
         
         print()
         print("=" * 60)
-        print("YOLOv11s TRAINING COMPLETE")
+        print("YOLOv11s v2 TRAINING COMPLETE")
         print("=" * 60)
         return True
         
@@ -191,7 +201,7 @@ def run_yolo11s_training(resume: bool = False):
         return False
     except KeyboardInterrupt:
         print("\n⏸️  Training interrupted by user")
-        print("To resume later, run: python scripts/train_yolo11s.py --resume")
+        print(f"To resume later, run: python scripts/train_v2.py --resume")
         return False
     except Exception as e:
         print(f"❌ Training failed: {e}")
@@ -201,10 +211,10 @@ def run_yolo11s_training(resume: bool = False):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train YOLOv11s for fire/smoke detection")
+    parser = argparse.ArgumentParser(description="Train YOLOv11s v2 (960px) for fire/smoke detection")
     parser.add_argument("--resume", action="store_true", 
                         help="Resume training from latest checkpoint")
     args = parser.parse_args()
     
-    success = run_yolo11s_training(resume=args.resume)
+    success = run_yolo11s_training_v2(resume=args.resume)
     exit(0 if success else 1)

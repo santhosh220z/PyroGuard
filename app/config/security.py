@@ -127,12 +127,12 @@ def require_role(*allowed_roles: str):
 
 
 def rate_limit(limit: str):
-    """Decorator for rate limiting endpoints."""
+    """Decorator for rate limiting endpoints. Endpoint must accept a `request: Request` parameter."""
     def decorator(func):
         @wraps(func)
         @limiter.limit(limit)
-        async def wrapper(*args, **kwargs):
-            return await func(*args, **kwargs)
+        async def wrapper(request: Request, *args, **kwargs):
+            return await func(request, *args, **kwargs)
         return wrapper
     return decorator
 
