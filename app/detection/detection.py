@@ -31,6 +31,7 @@ class DetectionModel:
         self.last_confirmation_time = 0
         self.fire_confirmed = False
         self.confirmation_counter = 0
+        self.fire_confirmed_previously = False  # Track if fire was already confirmed to avoid duplicate incidents
     
     def initialize(self):
         """Load the YOLO model."""
@@ -162,6 +163,7 @@ class DetectionModel:
                 self.fire_detection_history.clear()
                 self.confirmation_counter = 0
                 self.fire_confirmed = False
+                self.fire_confirmed_previously = False
             
             return {
                 "verified": False,
@@ -176,6 +178,7 @@ class DetectionModel:
         self.last_confirmation_time = 0
         self.fire_confirmed = False
         self.confirmation_counter = 0
+        self.fire_confirmed_previously = False
 
 
 # Global model instance

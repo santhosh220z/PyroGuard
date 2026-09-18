@@ -6,10 +6,12 @@
 
 import threading
 import time
+import cv2
 from datetime import datetime
 
 from app.detection.detection import DetectionModel
 from app.detection.pipeline import STATE_NORMAL, STATE_WARNING, STATE_FIRE_DETECTED
+from app.incidents import incident_manager
 
 
 class LiveDetectionService:
@@ -112,6 +114,45 @@ class LiveDetectionService:
                 return c["id"]
         return None
 
+    def _trigger_incident(self, cam_id, frame, detections, verification):
+        """Create incident when fire is confirmed."""
+        try:
+            # Find the best fire/smoke detection
+            fire_detections = [d for d in detections if d.get("class_name") in ("fire", "smoke")]
+            if not fire_detections:
+                return
+
+            best = max(fire_detections, key=lambda d: d["confidence"])
+            
+            # Encode frame as JPEG for snapshot
+            _, img_bytes = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            image_bytes = img_bytes.tobytes()
+
+            # Get camera config for name
+            cam_name = "Unknown"
+            for c in self._manager.cameras:
+                if c.get("id") == cam_id:
+                    cam_name = c.get("name", cam_id)
+                    break
+
+            # Create incident (non-blocking, handled by incident_manager)
+            incident_manager.create_incident(
+                camera_id=cam_id,
+                camera_name=cam_name,
+                confidence=best["confidence"],
+                bbox={
+                    "x1": best["bbox"][0],
+                    "y1": best["bbox"][1],
+                    "x2": best["bbox"][2],
+                    "y2": best["bbox"][3],
+                },
+                class_name=best["class_name"],
+                image_bytes=image_bytes,
+            )
+            print(f"[INCIDENT] Created for camera {cam_id}: {best['class_name']} {best['confidence']:.2%}")
+        except Exception as e:
+            print(f"[INCIDENT] Failed to create incident: {e}")
+
     def _process_primary(self, cam_id):
         if cam_id is None or not self._model_loaded:
             return
@@ -129,10 +170,16 @@ class LiveDetectionService:
 
         if verification["fire_confirmed"]:
             state = STATE_FIRE_DETECTED
+            # Trigger incident creation on first confirmation
+            if not self._model.fire_confirmed_previously:
+                self._trigger_incident(cam_id, frame, detections, verification)
+                self._model.fire_confirmed_previously = True
         elif verification["confirmation_counter"] > 0:
             state = STATE_WARNING
+            self._model.fire_confirmed_previously = False
         else:
             state = STATE_NORMAL
+            self._model.fire_confirmed_previously = False
 
         with self._lock:
             self._latest_detections[cam_id] = detections
