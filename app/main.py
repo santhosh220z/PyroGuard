@@ -20,15 +20,24 @@ def get_project_info():
         "status": "initializing"
     }
 
+
 def create_app():
     """Create and configure the FastAPI application"""
     from contextlib import asynccontextmanager
     from fastapi import FastAPI
     from fastapi.staticfiles import StaticFiles
+    from fastapi.middleware.cors import CORSMiddleware
     from app.api.routes import router
+    from app.api.auth import router as auth_router
+    from app.config.security import setup_rate_limiter, get_cors_origins
+    from app.database import init_db
 
     @asynccontextmanager
     async def lifespan(app):
+        # Initialize database
+        init_db()
+        print("Database initialized")
+        
         # Start the live detection background thread (single camera reader).
         from app.detection.live_service import get_live_service
         service = get_live_service()
@@ -42,14 +51,29 @@ def create_app():
         version="0.1.0",
         lifespan=lifespan,
     )
-    
+
+    # CORS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=get_cors_origins(),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Rate limiter
+    setup_rate_limiter(app)
+
+    # Routers
     app.include_router(router)
-    
+    app.include_router(auth_router)
+
     dashboard_dist = PROJECT_ROOT / "pyroguard ui" / "dist"
     if dashboard_dist.exists():
         app.mount("/dashboard", StaticFiles(directory=str(dashboard_dist), html=True), name="dashboard")
-    
+
     return app
+
 
 # Initialize on import
 project_info = get_project_info()
