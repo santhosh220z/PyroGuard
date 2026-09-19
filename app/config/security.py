@@ -11,7 +11,7 @@ from functools import wraps
 from fastapi import HTTPException, Request, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from jose import jwt, JWTError
-from passlib.context import CryptContext
+import bcrypt
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -20,7 +20,6 @@ from starlette.responses import JSONResponse
 from app.config.config import settings
 
 # Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT settings
 JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_urlsafe(32))
@@ -72,12 +71,15 @@ def verify_token(token: str) -> Optional[dict]:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password."""
-    return pwd_context.hash(password)
+    """Hash a password (bcrypt, 12 rounds)."""
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 
 def verify_webhook_signature(payload: bytes, signature: str, secret: str) -> bool:

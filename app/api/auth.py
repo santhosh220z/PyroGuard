@@ -21,10 +21,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # Format: username -> {"hash": bcrypt_hash, "role": "admin|operator|viewer"}
 USERS = {}
 
-# Initialize default admin if JWT_SECRET is set
-if settings.JWT_SECRET:
-    default_admin_pass = os.getenv("DEFAULT_ADMIN_PASSWORD", "changeme123")
-    USERS["admin"] = {"hash": get_password_hash(default_admin_pass), "role": "admin"}
+# Initialize default admin (in-memory, dev default; replace with DB seed in prod)
+default_admin_pass = os.getenv("DEFAULT_ADMIN_PASSWORD", "changeme123")
+USERS["admin"] = {"hash": get_password_hash(default_admin_pass), "role": "admin"}
 
 
 class LoginRequest(BaseModel):
