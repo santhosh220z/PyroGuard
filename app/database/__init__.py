@@ -1,6 +1,6 @@
 """Database package initialization."""
 from app.database.database import init_db, get_db, get_db_session, engine, SessionLocal
-from app.database.models import Incident, Alert, AuditLog, IncidentStatus, IncidentSeverity, AlertStatus, Base
+from app.database.models import Incident, Alert, AuditLog, IncidentStatus, IncidentSeverity, AlertStatus, User, UserRole, Base
 from app.database.crud import (
     create_incident,
     get_incident,
@@ -14,6 +14,11 @@ from app.database.crud import (
     get_audit_logs,
     get_incident_stats,
     calculate_severity,
+    get_user,
+    get_user_by_id,
+    create_user,
+    update_last_login,
+    list_users,
 )
 
 __all__ = [
@@ -28,6 +33,8 @@ __all__ = [
     "IncidentStatus",
     "IncidentSeverity",
     "AlertStatus",
+    "User",
+    "UserRole",
     "Base",
     "create_incident",
     "get_incident",
@@ -41,4 +48,9 @@ __all__ = [
     "get_audit_logs",
     "get_incident_stats",
     "calculate_severity",
+    "get_user",
+    "get_user_by_id",
+    "create_user",
+    "update_last_login",
+    "list_users",
 ]

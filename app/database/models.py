@@ -131,3 +131,22 @@ class AuditLog(Base):
     __table_args__ = (
         Index("ix_audit_logs_incident_timestamp", "incident_id", "timestamp"),
     )
+
+
+class UserRole(str, PyEnum):
+    VIEWER = "viewer"
+    OPERATOR = "operator"
+    ADMIN = "admin"
+
+
+class User(Base):
+    """User account for authentication."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(64), unique=True, nullable=False, index=True)
+    password_hash = Column(String(256), nullable=False)
+    role = Column(Enum(UserRole), default=UserRole.VIEWER, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_login = Column(DateTime, nullable=True)

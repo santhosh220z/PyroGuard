@@ -1,10 +1,10 @@
-"""CRUD operations for incidents, alerts, and audit logs."""
+"""CRUD operations for incidents, alerts, audit logs, and users."""
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func, or_
 
-from app.database.models import Incident, Alert, AuditLog, IncidentStatus, IncidentSeverity, AlertStatus
+from app.database.models import Incident, Alert, AuditLog, IncidentStatus, IncidentSeverity, AlertStatus, User, UserRole
 
 
 def calculate_severity(confidence: float, class_name: str) -> IncidentSeverity:
@@ -23,6 +23,47 @@ def calculate_severity(confidence: float, class_name: str) -> IncidentSeverity:
         elif confidence >= 0.7:
             return IncidentSeverity.MEDIUM
         return IncidentSeverity.LOW
+
+
+# --- User CRUD ---
+
+def get_user(db: Session, username: str) -> Optional[User]:
+    """Get user by username."""
+    return db.query(User).filter(User.username == username).first()
+
+
+def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
+    """Get user by ID."""
+    return db.query(User).filter(User.id == user_id).first()
+
+
+def create_user(
+    db: Session,
+    username: str,
+    password_hash: str,
+    role: UserRole = UserRole.VIEWER,
+) -> User:
+    """Create a new user."""
+    user = User(
+        username=username,
+        password_hash=password_hash,
+        role=role,
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
+def update_last_login(db: Session, user_id: int) -> None:
+    """Update user's last login timestamp."""
+    user = get_user_by_id(db, user_id)
+    if user:
+        user.last_login = datetime.utcnow()
+
+
+def list_users(db: Session, limit: int = 100, offset: int = 0) -> List[User]:
+    """List all users."""
+    return db.query(User).order_by(User.created_at.desc()).limit(limit).offset(offset).all()
 
 
 def create_incident(

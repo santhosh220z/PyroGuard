@@ -97,12 +97,19 @@ async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     api_key: Optional[str] = Depends(API_KEY_HEADER),
 ) -> Dict[str, Any]:
-    """Get current authenticated user from JWT or API key."""
-    # Try JWT first
+    """Get current authenticated user from JWT (header or cookie) or API key."""
+    # Try JWT from Authorization header first
     if credentials:
         payload = verify_token(credentials.credentials)
         if payload and payload.get("type") == "access":
             return {"sub": payload.get("sub"), "role": payload.get("role", "viewer"), "auth_type": "jwt"}
+    
+    # Try JWT from httpOnly cookie
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        payload = verify_token(cookie_token)
+        if payload and payload.get("type") == "access":
+            return {"sub": payload.get("sub"), "role": payload.get("role", "viewer"), "auth_type": "jwt_cookie"}
     
     # Try API key
     if api_key and api_key in API_KEYS:
