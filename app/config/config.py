@@ -14,7 +14,7 @@ load_dotenv(dotenv_path=env_path)
 # Project root for resolving relative paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
-# Load YAML config as base defaults
+# Load YAML configs as base defaults
 _yaml_settings = {}
 _config_yaml = PROJECT_ROOT / "configs" / "config.yaml"
 try:
@@ -27,6 +27,19 @@ try:
 except ImportError:
     pass  # PyYAML not installed; fall back to env/code defaults only
 
+# Load alerts config
+_alerts_yaml = PROJECT_ROOT / "config" / "alerts.yaml"
+_alerts_settings = {}
+try:
+    import yaml
+    if _alerts_yaml.exists():
+        with open(_alerts_yaml, "r", encoding="utf-8") as f:
+            loaded = yaml.safe_load(f)
+            if isinstance(loaded, dict):
+                _alerts_settings = loaded
+except ImportError:
+    pass
+
 
 def _setting(key: str, default, cast=None):
     """Resolve a setting: env var overrides YAML overrides code default."""
@@ -35,6 +48,25 @@ def _setting(key: str, default, cast=None):
         try:
             return cast(value)
         except (TypeError, ValueError):
+            return default
+    return value
+
+
+def _alert_setting(path: str, default=None):
+    """Resolve an alert setting from alerts.yaml with env override.
+    Env var format: ALERT_EMAIL_ENABLED, ALERT_EMAIL_TO, ALERT_TELEGRAM_CHAT_ID, etc.
+    """
+    # Try env var first (uppercase with ALERT_ prefix)
+    env_key = "ALERT_" + path.upper().replace(".", "_")
+    if env_key in os.environ:
+        return os.environ[env_key]
+    # Fall back to YAML
+    keys = path.split(".")
+    value = _alerts_settings
+    for k in keys:
+        if isinstance(value, dict) and k in value:
+            value = value[k]
+        else:
             return default
     return value
 
@@ -73,28 +105,8 @@ class Settings:
         # Database
         self.DATABASE_URL: str = _setting("DATABASE_URL", "sqlite:///data/incidents/incidents.db", str)
 
-        # Alert settings (deferred; automations come later)
-        self.SMTP_HOST: str = _setting("SMTP_HOST", "", str)
-        self.SMTP_PORT: int = _setting("SMTP_PORT", 587, int)
-        self.SMTP_USERNAME: str = _setting("SMTP_USERNAME", "", str)
-        # SMTP_PASSWORD loaded from env only (never from YAML)
-        self.SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
-        self.SMTP_FROM: str = _setting("SMTP_FROM", "", str)
-        self.SMTP_TO: str = _setting("SMTP_TO", "", str)
-
-        self.TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-        self.TELEGRAM_CHAT_ID: str = _setting("TELEGRAM_CHAT_ID", "", str)
-
-        self.WEBHOOK_URL: str = _setting("WEBHOOK_URL", "", str)
-        # WEBHOOK_SECRET loaded from env only
-        self.WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")
-
         # Alert cooldown
         self.ALERT_COOLDOWN: int = _setting("ALERT_COOLDOWN", 30, int)
-
-        # Authentication
-        self.JWT_SECRET: str = os.getenv("JWT_SECRET", "")
-        self.API_KEYS: str = os.getenv("API_KEYS", "")
 
         # CORS
         self.ALLOWED_ORIGINS: str = _setting("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000", str)
@@ -105,8 +117,42 @@ class Settings:
         # Mode
         self.DRY_RUN: bool = str(_setting("DRY_RUN", "true", str)).lower() == "true"
 
+        # Alert settings (loaded from alerts.yaml + env overrides)
+        self._load_alert_settings()
+
         # Validate on init
         self._validate()
+
+    def _load_alert_settings(self):
+        """Load alert settings from alerts.yaml with env overrides."""
+        # Email
+        self.ALERT_EMAIL_ENABLED = _alert_setting("email.enabled", False)
+        self.ALERT_EMAIL_TO = _alert_setting("email.to", "")
+        self.SMTP_HOST = os.getenv("SMTP_HOST", "")
+        self.SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+        self.SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
+        self.SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+        self.SMTP_FROM = os.getenv("SMTP_FROM", "")
+        
+        # Telegram
+        self.ALERT_TELEGRAM_ENABLED = _alert_setting("telegram.enabled", False)
+        self.ALERT_TELEGRAM_CHAT_ID = _alert_setting("telegram.chat_id", "")
+        self.TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        
+        # Webhook
+        self.ALERT_WEBHOOK_ENABLED = _alert_setting("webhook.enabled", False)
+        self.ALERT_WEBHOOK_URL = _alert_setting("webhook.url", "")
+        self.WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+        
+        # SMS
+        self.ALERT_SMS_ENABLED = _alert_setting("sms.enabled", False)
+        self.ALERT_SMS_PROVIDER = _alert_setting("sms.provider", "twilio")
+        self.ALERT_SMS_TO = _alert_setting("sms.to", "")
+        self.TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+        self.TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+        self.TWILIO_FROM = os.getenv("TWILIO_FROM", "")
+        self.SMS_WEBHOOK_URL = os.getenv("SMS_WEBHOOK_URL", "")
+        self.SMS_WEBHOOK_SECRET = os.getenv("SMS_WEBHOOK_SECRET", "")
 
     def _validate(self):
         """Validate critical settings and warn on issues."""
@@ -125,38 +171,44 @@ class Settings:
 
         # Alert validation (only if not DRY_RUN)
         if not self.DRY_RUN:
-            if self.SMTP_HOST and not self.SMTP_PASSWORD:
-                logger.warning("SMTP_HOST set but SMTP_PASSWORD missing (set in .env)")
-            if self.TELEGRAM_BOT_TOKEN and not self.TELEGRAM_CHAT_ID:
-                logger.warning("TELEGRAM_BOT_TOKEN set but TELEGRAM_CHAT_ID missing")
-            if self.WEBHOOK_URL and not self.WEBHOOK_SECRET:
-                logger.warning("WEBHOOK_URL set but WEBHOOK_SECRET missing (set in .env)")
-
-        # Auth validation
-        if not self.JWT_SECRET and not self.DRY_RUN:
-            logger.warning("JWT_SECRET not set; using generated secret (tokens invalid on restart)")
+            if self.ALERT_EMAIL_ENABLED and not (self.SMTP_HOST and self.SMTP_PASSWORD and self.ALERT_EMAIL_TO):
+                logger.warning("Email alerts enabled but SMTP config incomplete (check .env and alerts.yaml)")
+            if self.ALERT_TELEGRAM_ENABLED and not (self.TELEGRAM_BOT_TOKEN and self.ALERT_TELEGRAM_CHAT_ID):
+                logger.warning("Telegram alerts enabled but bot token or chat ID missing")
+            if self.ALERT_WEBHOOK_ENABLED and not (self.ALERT_WEBHOOK_URL and self.WEBHOOK_SECRET):
+                logger.warning("Webhook alerts enabled but URL or secret missing")
 
     def get_alert_config(self) -> Dict[str, Any]:
-        """Get alert provider configs as a dict."""
+        """Get alert provider configs as a dict (from alerts.yaml + env)."""
         return {
             "email": {
-                "enabled": bool(self.SMTP_HOST and self.SMTP_PASSWORD and self.SMTP_TO),
+                "enabled": self.ALERT_EMAIL_ENABLED,
                 "host": self.SMTP_HOST,
                 "port": self.SMTP_PORT,
                 "username": self.SMTP_USERNAME,
                 "password": self.SMTP_PASSWORD,
                 "from_addr": self.SMTP_FROM or self.SMTP_USERNAME,
-                "to_addr": self.SMTP_TO,
+                "to_addr": self.ALERT_EMAIL_TO,
             },
             "telegram": {
-                "enabled": bool(self.TELEGRAM_BOT_TOKEN and self.TELEGRAM_CHAT_ID),
+                "enabled": self.ALERT_TELEGRAM_ENABLED,
                 "bot_token": self.TELEGRAM_BOT_TOKEN,
-                "chat_id": self.TELEGRAM_CHAT_ID,
+                "chat_id": self.ALERT_TELEGRAM_CHAT_ID,
             },
             "webhook": {
-                "enabled": bool(self.WEBHOOK_URL and self.WEBHOOK_SECRET),
-                "url": self.WEBHOOK_URL,
+                "enabled": self.ALERT_WEBHOOK_ENABLED,
+                "url": self.ALERT_WEBHOOK_URL,
                 "secret": self.WEBHOOK_SECRET,
+            },
+            "sms": {
+                "enabled": self.ALERT_SMS_ENABLED,
+                "provider": self.ALERT_SMS_PROVIDER,
+                "to": self.ALERT_SMS_TO,
+                "account_sid": self.TWILIO_ACCOUNT_SID,
+                "auth_token": self.TWILIO_AUTH_TOKEN,
+                "from_number": self.TWILIO_FROM,
+                "webhook_url": self.SMS_WEBHOOK_URL,
+                "webhook_secret": self.SMS_WEBHOOK_SECRET,
             },
         }
 

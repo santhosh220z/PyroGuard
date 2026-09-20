@@ -63,8 +63,21 @@ def register_provider(name: str, provider_class):
 def get_providers(config: dict) -> list:
     """Get enabled provider instances from config."""
     providers = []
+    
+    # Standard providers (email, telegram, webhook)
     for name, provider_class in PROVIDER_REGISTRY.items():
+        if name in ("twiliosms", "webhooksms"):
+            continue  # Handle SMS separately
         provider_config = config.get(name, {})
         if provider_config.get("enabled"):
             providers.append(provider_class(provider_config))
+    
+    # SMS providers (special handling - type-based)
+    sms_config = config.get("sms", {})
+    if sms_config.get("enabled"):
+        from app.alerts.sms import _get_sms_provider
+        sms_provider = _get_sms_provider(sms_config)
+        if sms_provider:
+            providers.append(sms_provider)
+    
     return providers

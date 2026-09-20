@@ -1,0 +1,24 @@
+# Alert Configuration
+# Edit this file and restart the server to change alert recipients
+
+email:
+  enabled: false
+  to: ""                    # Recipient email address
+  # SMTP credentials from env: SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM
+
+telegram:
+  enabled: false
+  chat_id: ""               # Telegram chat ID (get from @userinfobot)
+  # Bot token from env: TELEGRAM_BOT_TOKEN
+
+webhook:
+  enabled: false
+  url: ""                   # Webhook endpoint URL
+  # Secret from env: WEBHOOK_SECRET (for HMAC verification)
+
+sms:
+  enabled: false
+  provider: "twilio"        # "twilio" or "webhook"
+  to: ""                    # Phone number in E.164 format (+15551234567)
+  # Twilio credentials from env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM
+  # Webhook URL from env: SMS_WEBHOOK_URL, SMS_WEBHOOK_SECRET
