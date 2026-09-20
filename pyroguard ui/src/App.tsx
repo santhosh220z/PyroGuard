@@ -29,6 +29,12 @@ function Icon({ name, className = "" }: { name: string className?: string }) {
     moon: (
       <path d="M20.4 15.3A8.5 8.5 0 0 1 8.7 3.6 8.5 8.5 0 1 0 20.4 15.3Z" />
     ),
+    user: (
+      <>
+        <circle cx="12" cy="8" r="3.5" />
+        <path d="M4.5 20c1.4-3.6 4.2-5.5 7.5-5.5s6.1 1.9 7.5 5.5" />
+      </>
+    ),
   }
   return (
     <svg
@@ -103,6 +109,10 @@ function AppShell() {
             <Icon name="grid" />
             Dashboard
           </Link>
+          <Link className="nav-link" to="/profile">
+            <Icon name="user" />
+            Profile
+          </Link>
         </nav>
         <div className="sidebar-status">
           <span className={`status-dot ${allNominal ? "" : "warn"}`} />
@@ -124,6 +134,14 @@ function AppShell() {
           </Link>
           <span className="eyebrow">Fire & smoke detection</span>
           <div className="top-actions">
+            <Link
+              to="/profile"
+              className="icon-button"
+              aria-label="Alert profile"
+              title="Alert profile"
+            >
+              <Icon name="user" />
+            </Link>
             <button
               onClick={() => setDark(!dark)}
               className="icon-button"
@@ -309,12 +327,252 @@ function Dashboard() {
   )
 }
 
+type ProfileData = {
+  configured: boolean
+  display_name: string | null
+  email: string | null
+  notify_email: boolean
+  phone: string | null
+  notify_sms: boolean
+  telegram_chat_id: string | null
+  notify_telegram: boolean
+  has_pin: boolean
+  updated_at: string | null
+}
+
+function ProfilePage() {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null)
+  const [form, setForm] = useState({
+    display_name: "",
+    email: "",
+    notify_email: true,
+    phone: "",
+    notify_sms: false,
+    telegram_chat_id: "",
+    notify_telegram: false,
+    pin: "",
+    new_pin: "",
+  })
+  const [hasPin, setHasPin] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    fetchJSON<ProfileData>("/api/profile").then((d) => {
+      if (!alive) return
+      setLoading(false)
+      if (!d) {
+        setMessage({ kind: "error", text: "Could not load profile. Is the server running?" })
+        return
+      }
+      setHasPin(d.has_pin)
+      setForm((f) => ({
+        ...f,
+        display_name: d.display_name || "",
+        email: d.email || "",
+        notify_email: d.notify_email,
+        phone: d.phone || "",
+        notify_sms: d.notify_sms,
+        telegram_chat_id: d.telegram_chat_id || "",
+        notify_telegram: d.notify_telegram,
+      }))
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const set = (key: keyof typeof form) => (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const value = e.target.type === "checkbox" ? e.target.checked : e.target.value
+    setForm((f) => ({ ...f, [key]: value }))
+  }
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    setMessage(null)
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          display_name: form.display_name || null,
+          email: form.email || null,
+          notify_email: form.notify_email,
+          phone: form.phone || null,
+          notify_sms: form.notify_sms,
+          telegram_chat_id: form.telegram_chat_id || null,
+          notify_telegram: form.notify_telegram,
+          pin: form.pin || null,
+          new_pin: form.new_pin || null,
+        }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        const detail = (data as any)?.detail
+        const text = Array.isArray(detail)
+          ? detail.map((d: any) => d.msg).join("; ")
+          : typeof detail === "string"
+            ? detail
+            : "Could not save profile"
+        setMessage({ kind: "error", text })
+        return
+      }
+      setHasPin(!!(data as ProfileData)?.has_pin)
+      setForm((f) => ({ ...f, pin: "", new_pin: "" }))
+      setMessage({ kind: "ok", text: "Profile saved. Fire alerts will use these contacts." })
+    } catch {
+      setMessage({ kind: "error", text: "Could not save profile. Is the server running?" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <main className="dashboard">
+      <div className="dashboard-head">
+        <div>
+          <p className="eyebrow">Alert contacts</p>
+          <h1>Profile</h1>
+          <p className="subcopy">
+            Fire and smoke alerts are sent to these contacts. No login needed.
+          </p>
+        </div>
+      </div>
+      <section className="primary-grid">
+        <article className="prediction-card">
+          <div className="card-icon">
+            <Icon name="user" />
+          </div>
+          <p className="eyebrow">Where alerts go</p>
+          {loading ? (
+            <p className="prediction-note">Loading profile…</p>
+          ) : (
+            <form onSubmit={save} className="profile-form">
+              <label className="field">
+                <span>Name</span>
+                <input
+                  type="text"
+                  value={form.display_name}
+                  onChange={set("display_name")}
+                  placeholder="e.g. Home, Warehouse"
+                  maxLength={128}
+                />
+              </label>
+              <label className="field">
+                <span>Email for alerts</span>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={set("email")}
+                  placeholder="you@example.com"
+                />
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={form.notify_email}
+                  onChange={set("notify_email")}
+                />
+                Send email alerts
+              </label>
+              <label className="field">
+                <span>Mobile number for SMS</span>
+                <input
+                  type="tel"
+                  value={form.phone}
+                  onChange={set("phone")}
+                  placeholder="+15551234567"
+                />
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={form.notify_sms}
+                  onChange={set("notify_sms")}
+                />
+                Send SMS alerts
+              </label>
+              <label className="field">
+                <span>Telegram chat ID</span>
+                <input
+                  type="text"
+                  value={form.telegram_chat_id}
+                  onChange={set("telegram_chat_id")}
+                  placeholder="e.g. 123456789"
+                  maxLength={64}
+                />
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={form.notify_telegram}
+                  onChange={set("notify_telegram")}
+                />
+                Send Telegram alerts
+              </label>
+              <label className="field">
+                <span>{hasPin ? "Current PIN (required to save)" : "Current PIN (only if one is set)"}</span>
+                <input
+                  type="password"
+                  value={form.pin}
+                  onChange={set("pin")}
+                  placeholder="••••"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="field">
+                <span>New PIN (optional, min 4 chars)</span>
+                <input
+                  type="password"
+                  value={form.new_pin}
+                  onChange={set("new_pin")}
+                  placeholder="Set a PIN to lock edits"
+                  autoComplete="off"
+                />
+              </label>
+              <button type="submit" className="profile-save" disabled={saving}>
+                {saving ? "Saving…" : "Save profile"}
+              </button>
+              {message && (
+                <p className={message.kind === "ok" ? "form-ok" : "form-error"}>
+                  {message.text}
+                </p>
+              )}
+            </form>
+          )}
+        </article>
+        <article className="coverage-card">
+          <p className="eyebrow">How it works</p>
+          <div>
+            <strong>01</strong>
+            <span>
+              Save your email and mobile number here.
+              <br />
+              No account needed.
+            </span>
+          </div>
+          <p className="prediction-note">
+            When fire or smoke is confirmed, PyroGuard sends alerts to the
+            contacts you enabled above. Email and Telegram need their server
+            credentials configured; SMS needs a Twilio account or webhook.
+          </p>
+        </article>
+      </section>
+    </main>
+  )
+}
+
 const router = createBrowserRouter(
   [
     {
       Component: AppShell,
       children: [
         { index: true, Component: Dashboard },
+        { path: "profile", Component: ProfilePage },
         { path: "about", Component: () => <Navigate to="/" replace /> },
         { path: "*", Component: () => <Navigate to="/" replace /> },
       ],

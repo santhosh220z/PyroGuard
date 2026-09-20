@@ -40,6 +40,7 @@ export default defineConfig(({ mode }) => {
         '/incidents': 'http://localhost:8000',
         '/model': 'http://localhost:8000',
         '/alerts': 'http://localhost:8000',
+        '/api': 'http://localhost:8000',
       },
       watch: {
         ignored: [
