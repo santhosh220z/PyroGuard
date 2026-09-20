@@ -284,21 +284,26 @@ async def resolve_incident_endpoint(
 
 # ===== Alert Test Endpoint =====
 
-@router.post("/alerts/test", summary="Test all enabled alert channels")
+@router.post("/alerts/test", summary="Send demo alert to profile contacts")
 @rate_limit("3/minute")
 async def test_alerts(
     request: Request,
 ):
-    """Test alert channels (DRY_RUN safe)."""
-    from app.config.config import settings
-    from app.alerts import get_providers
-    
-    if not settings.DRY_RUN:
-        return {"warning": "DRY_RUN=false - this will send real alerts!"}
-    
-    providers = get_providers(settings.get_alert_config())
+    """Send a real demo alert through all configured channels.
+
+    Recipients come from the saved alert profile (Profile page),
+    falling back to static config in alerts.yaml/env. This endpoint
+    intentionally sends real messages - that is its job. Automatic
+    fire-detection alerts still respect DRY_RUN.
+    """
+    from app.database import get_db_session
+    from app.incidents import incident_manager
+
+    with get_db_session() as db:
+        contacts = incident_manager._profile_contacts(db)
+    providers = incident_manager._providers_for_contacts(contacts)
     if not providers:
-        return {"message": "No alert channels configured", "enabled": []}
+        return {"message": "No alert channels configured (save contacts on the Profile page)", "enabled": []}
     
     test_incident = {
         "id": "test",
