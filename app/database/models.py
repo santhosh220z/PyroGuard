@@ -140,7 +140,7 @@ class UserRole(str, PyEnum):
 
 
 class User(Base):
-    """User account for authentication."""
+    """User account for authentication (legacy; auth removed, table retained)."""
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -150,3 +150,24 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_login = Column(DateTime, nullable=True)
+
+
+class AlertProfile(Base):
+    """Single alert-contact profile for this deployment (id=1).
+
+    No login: the app reads recipients from this row when dispatching
+    incident alerts. Writes can be gated by an optional PIN.
+    """
+    __tablename__ = "alert_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    display_name = Column(String(128), nullable=True)
+    email = Column(String(256), nullable=True)
+    notify_email = Column(Boolean, default=True, nullable=False)
+    phone = Column(String(32), nullable=True)  # E.164, e.g. +15551234567
+    notify_sms = Column(Boolean, default=False, nullable=False)
+    telegram_chat_id = Column(String(64), nullable=True)
+    notify_telegram = Column(Boolean, default=False, nullable=False)
+    pin_hash = Column(String(256), nullable=True)  # optional edit PIN (bcrypt)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)

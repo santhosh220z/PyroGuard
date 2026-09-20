@@ -1,10 +1,10 @@
-"""CRUD operations for incidents, alerts, audit logs, and users."""
+"""CRUD operations for incidents, alerts, and audit logs."""
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func, or_
 
-from app.database.models import Incident, Alert, AuditLog, IncidentStatus, IncidentSeverity, AlertStatus, User, UserRole
+from app.database.models import Incident, Alert, AuditLog, IncidentStatus, IncidentSeverity, AlertStatus, AlertProfile
 
 
 def calculate_severity(confidence: float, class_name: str) -> IncidentSeverity:
@@ -25,45 +25,39 @@ def calculate_severity(confidence: float, class_name: str) -> IncidentSeverity:
         return IncidentSeverity.LOW
 
 
-# --- User CRUD ---
-
-def get_user(db: Session, username: str) -> Optional[User]:
-    """Get user by username."""
-    return db.query(User).filter(User.username == username).first()
+def get_alert_profile(db: Session) -> Optional[AlertProfile]:
+    """Get the singleton alert-contact profile (id=1), or None if unset."""
+    return db.query(AlertProfile).filter(AlertProfile.id == 1).first()
 
 
-def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
-    """Get user by ID."""
-    return db.query(User).filter(User.id == user_id).first()
-
-
-def create_user(
+def save_alert_profile(
     db: Session,
-    username: str,
-    password_hash: str,
-    role: UserRole = UserRole.VIEWER,
-) -> User:
-    """Create a new user."""
-    user = User(
-        username=username,
-        password_hash=password_hash,
-        role=role,
-    )
-    db.add(user)
+    display_name: Optional[str] = None,
+    email: Optional[str] = None,
+    notify_email: bool = True,
+    phone: Optional[str] = None,
+    notify_sms: bool = False,
+    telegram_chat_id: Optional[str] = None,
+    notify_telegram: bool = False,
+    pin_hash: Optional[str] = None,
+) -> AlertProfile:
+    """Create or update the singleton alert-contact profile (id=1)."""
+    profile = db.query(AlertProfile).filter(AlertProfile.id == 1).first()
+    if profile is None:
+        profile = AlertProfile(id=1)
+        db.add(profile)
+    profile.display_name = display_name or None
+    profile.email = email or None
+    profile.notify_email = bool(notify_email)
+    profile.phone = phone or None
+    profile.notify_sms = bool(notify_sms)
+    profile.telegram_chat_id = telegram_chat_id or None
+    profile.notify_telegram = bool(notify_telegram)
+    if pin_hash is not None:
+        profile.pin_hash = pin_hash
+    profile.updated_at = datetime.utcnow()
     db.flush()
-    return user
-
-
-def update_last_login(db: Session, user_id: int) -> None:
-    """Update user's last login timestamp."""
-    user = get_user_by_id(db, user_id)
-    if user:
-        user.last_login = datetime.utcnow()
-
-
-def list_users(db: Session, limit: int = 100, offset: int = 0) -> List[User]:
-    """List all users."""
-    return db.query(User).order_by(User.created_at.desc()).limit(limit).offset(offset).all()
+    return profile
 
 
 def create_incident(

@@ -21,6 +21,7 @@ from app.database import (
     get_alerts_for_incident,
     get_audit_logs,
     get_incident_stats,
+    get_alert_profile,
 )
 from app.database.database import get_db_session
 from app.alerts import get_providers, AlertResult
@@ -72,19 +73,54 @@ class IncidentManager:
         except Exception:
             return None
 
+    def _profile_contacts(self, db) -> Dict[str, str]:
+        """Read alert contacts from the profile (single row, id=1)."""
+        try:
+            profile = get_alert_profile(db)
+        except Exception:
+            return {}
+        if profile is None:
+            return {}
+        contacts: Dict[str, str] = {}
+        if getattr(profile, "notify_email", False) and profile.email:
+            contacts["email"] = profile.email
+        if getattr(profile, "notify_sms", False) and profile.phone:
+            contacts["phone"] = profile.phone
+        if getattr(profile, "notify_telegram", False) and profile.telegram_chat_id:
+            contacts["telegram_chat_id"] = profile.telegram_chat_id
+        return contacts
+
+    def _providers_for_contacts(self, contacts: Dict[str, str]):
+        """Build providers from static config, overridden by profile contacts.
+
+        Precedence: profile contacts > alerts.yaml/env recipients.
+        A channel is enabled when statically enabled OR a profile contact
+        exists for it (credentials still come from env).
+        """
+        base = settings.get_alert_config()
+        if contacts.get("email"):
+            base["email"] = {**base.get("email", {}), "to_addr": contacts["email"], "enabled": True}
+        if contacts.get("telegram_chat_id"):
+            base["telegram"] = {**base.get("telegram", {}), "chat_id": contacts["telegram_chat_id"], "enabled": True}
+        if contacts.get("phone"):
+            base["sms"] = {**base.get("sms", {}), "to": contacts["phone"], "enabled": True}
+        return get_providers(base)
+
     async def _dispatch_alerts(
         self,
         incident_data: Dict[str, Any],
         image_bytes: Optional[bytes],
+        providers=None,
     ) -> List[AlertResult]:
         """Dispatch alerts to all enabled providers concurrently."""
-        if not self.providers:
+        providers = providers if providers is not None else self.providers
+        if not providers:
             return []
 
         # Prepare tasks
         tasks = [
             provider.send(incident_data, image_bytes)
-            for provider in self.providers
+            for provider in providers
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -94,7 +130,7 @@ class IncidentManager:
             if isinstance(result, Exception):
                 processed.append(AlertResult(
                     False,
-                    self.providers[i].name,
+                    providers[i].name,
                     "unknown",
                     str(result),
                 ))
@@ -168,6 +204,12 @@ class IncidentManager:
                 "snapshot_path": snapshot_path,
             }
 
+            # Profile contacts override static recipients for this incident
+            contacts = self._profile_contacts(db)
+            if contacts:
+                incident_data["contacts"] = contacts
+            providers = self._providers_for_contacts(contacts)
+
             # Set cooldown
             self.set_cooldown(camera_id)
 
@@ -179,7 +221,7 @@ class IncidentManager:
                     asyncio.set_event_loop(loop)
                     try:
                         results = loop.run_until_complete(
-                            self._dispatch_alerts(incident_data, image_bytes)
+                            self._dispatch_alerts(incident_data, image_bytes, providers)
                         )
                         self._record_alert_results(incident_id, results)
                     finally:
