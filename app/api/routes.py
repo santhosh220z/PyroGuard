@@ -7,18 +7,17 @@ from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import Response, StreamingResponse, FileResponse
 from pydantic import BaseModel
 
-from app.config.security import get_current_user, limiter, rate_limit
-from app.api.auth import require_operator, require_admin
+from app.config.security import limiter, rate_limit
 
 router = APIRouter(tags=["pyroguard"])
 
 
 class AcknowledgeRequest(BaseModel):
-    user: str
+    user: Optional[str] = None
 
 
 class ResolveRequest(BaseModel):
-    user: str
+    user: Optional[str] = None
     false_positive: bool = False
 
 
@@ -159,7 +158,6 @@ async def list_incidents(
     severity: Optional[str] = Query(None, description="Filter by severity"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    user: dict = Depends(get_current_user),
 ):
     """List incidents with optional filters and pagination."""
     from app.incidents import incident_manager
@@ -183,7 +181,6 @@ async def list_incidents(
 @rate_limit("60/minute")
 async def incident_stats(
     request: Request,
-    user: dict = Depends(get_current_user),
 ):
     """Get incident statistics for dashboard."""
     from app.incidents import incident_manager
@@ -195,7 +192,6 @@ async def incident_stats(
 async def get_incident(
     request: Request,
     incident_id: int,
-    user: dict = Depends(get_current_user),
 ):
     """Get detailed incident information."""
     from app.incidents import incident_manager
@@ -239,7 +235,6 @@ async def get_incident(
 async def get_incident_snapshot(
     request: Request,
     incident_id: int,
-    user: dict = Depends(get_current_user),
 ):
     """Get the incident snapshot image."""
     from app.incidents import incident_manager
@@ -261,11 +256,11 @@ async def acknowledge_incident_endpoint(
     request: Request,
     incident_id: int,
     body: AcknowledgeRequest,
-    user: dict = Depends(require_operator),
 ):
     """Acknowledge an incident."""
     from app.incidents import incident_manager
-    success = incident_manager.acknowledge(incident_id, body.user or user["sub"])
+    user = body.user or "anonymous"
+    success = incident_manager.acknowledge(incident_id, user)
     if not success:
         raise HTTPException(status_code=404, detail="Incident not found")
     return {"success": True, "message": "Incident acknowledged"}
@@ -277,11 +272,11 @@ async def resolve_incident_endpoint(
     request: Request,
     incident_id: int,
     body: ResolveRequest,
-    user: dict = Depends(require_operator),
 ):
     """Resolve an incident (or mark as false positive)."""
     from app.incidents import incident_manager
-    success = incident_manager.resolve(incident_id, body.user or user["sub"], body.false_positive)
+    user = body.user or "anonymous"
+    success = incident_manager.resolve(incident_id, user, body.false_positive)
     if not success:
         raise HTTPException(status_code=404, detail="Incident not found")
     return {"success": True, "message": "Incident resolved"}
@@ -293,7 +288,6 @@ async def resolve_incident_endpoint(
 @rate_limit("3/minute")
 async def test_alerts(
     request: Request,
-    user: dict = Depends(require_admin),
 ):
     """Test alert channels (DRY_RUN safe)."""
     from app.config.config import settings
