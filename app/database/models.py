@@ -168,6 +168,8 @@ class AlertProfile(Base):
     notify_sms = Column(Boolean, default=False, nullable=False)
     telegram_chat_id = Column(String(64), nullable=True)
     notify_telegram = Column(Boolean, default=False, nullable=False)
+    resend_api_key_hash = Column(Text, nullable=True)   # encrypted at rest (Fernet)
+    resend_from = Column(String(256), nullable=True)     # verified sender, e.g. alerts@yourdomain.com
     pin_hash = Column(String(256), nullable=True)  # optional edit PIN (bcrypt)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)

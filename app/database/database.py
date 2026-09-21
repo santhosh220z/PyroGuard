@@ -74,13 +74,28 @@ def _rebuild_sqlite_if_schema_changed():
         _replace_sqlite(db_path)
         return
 
-    # Expected columns from the current model
-    from app.database.models import Incident
-    expected = {c.name for c in Incident.__table__.columns}
-    actual = {c["name"] for c in inspector.get_columns("incidents")}
-    if not expected.issubset(actual):
-        _backup_sqlite(db_path)
-        _replace_sqlite(db_path)
+    # Expected columns from the current models. Rebuild if any model table
+    # is missing columns the ORM now expects (e.g. newly added Resend or
+    # webhook columns on an old dev DB).
+    from app.database import models as model_mod
+
+    for table_name, model in (
+        ("incidents", model_mod.Incident),
+        ("alert_profiles", model_mod.AlertProfile),
+    ):
+        if _table_missing_expected_columns(inspector, table_name, model):
+            _backup_sqlite(db_path)
+            _replace_sqlite(db_path)
+            return
+
+
+def _table_missing_expected_columns(inspector, table_name: str, model) -> bool:
+    """True if ``table_name`` exists but lacks any ORM-expected column."""
+    if not inspector.has_table(table_name):
+        return True
+    expected = {c.name for c in model.__table__.columns}
+    actual = {c["name"] for c in inspector.get_columns(table_name)}
+    return not expected.issubset(actual)
 
 
 def _backup_sqlite(db_path: Path):

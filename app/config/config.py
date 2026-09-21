@@ -154,6 +154,12 @@ class Settings:
         self.SMS_WEBHOOK_URL = os.getenv("SMS_WEBHOOK_URL", "")
         self.SMS_WEBHOOK_SECRET = os.getenv("SMS_WEBHOOK_SECRET", "")
 
+        # Resend (email API)
+        self.ALERT_RESEND_ENABLED = _alert_setting("resend.enabled", False)
+        self.ALERT_RESEND_TO = _alert_setting("resend.to", "")
+        self.RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+        self.RESEND_FROM = os.getenv("RESEND_FROM", "")
+
     def _validate(self):
         """Validate critical settings and warn on issues."""
         import logging
@@ -209,6 +215,12 @@ class Settings:
                 "from_number": self.TWILIO_FROM,
                 "webhook_url": self.SMS_WEBHOOK_URL,
                 "webhook_secret": self.SMS_WEBHOOK_SECRET,
+            },
+            "resend": {
+                "enabled": self.ALERT_RESEND_ENABLED,
+                "api_key": self.RESEND_API_KEY,
+                "from": self.RESEND_FROM,
+                "to": self.ALERT_RESEND_TO,
             },
         }
 

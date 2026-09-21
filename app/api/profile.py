@@ -4,6 +4,7 @@ GET  /api/profile  -> current contacts (for the Profile page)
 PUT  /api/profile  -> save contacts; gated by PIN once a PIN is set
 """
 import re
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -11,6 +12,8 @@ from pydantic import BaseModel, field_validator
 
 from app.config.security import rate_limit
 from app.config.security import get_password_hash, verify_password
+from app.config.security import encrypt_value, decrypt_value
+from app.alerts.resend import ResendEmailProvider
 from app.database import get_db, get_alert_profile, save_alert_profile
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
@@ -27,6 +30,8 @@ class ProfileUpdate(BaseModel):
     notify_sms: bool = False
     telegram_chat_id: Optional[str] = None
     notify_telegram: bool = False
+    resend_api_key: Optional[str] = None   # new key to store; null/empty keeps existing
+    resend_from: Optional[str] = None      # verified sender (e.g. alerts@yourdomain.com)
     pin: Optional[str] = None       # current PIN (required once a PIN is set)
     new_pin: Optional[str] = None   # set / change PIN (min 4 chars)
 
@@ -64,6 +69,23 @@ class ProfileUpdate(BaseModel):
             raise ValueError("Telegram chat ID too long (max 64)")
         return v
 
+    @field_validator("resend_from")
+    @classmethod
+    def _resend_from(cls, v):
+        v = (v or "").strip() or None
+        if v is not None:
+            if len(v) > 256 or not _EMAIL_RE.match(v):
+                raise ValueError("Invalid verified sender email address")
+        return v
+
+    @field_validator("resend_api_key")
+    @classmethod
+    def _resend_key(cls, v):
+        v = (v or "").strip() or None
+        if v is not None and len(v) > 128:
+            raise ValueError("Resend API key too long (max 128)")
+        return v
+
     @field_validator("new_pin")
     @classmethod
     def _new_pin(cls, v):
@@ -83,6 +105,8 @@ def _shape(profile) -> dict:
             "notify_sms": False,
             "telegram_chat_id": None,
             "notify_telegram": False,
+            "resend_configured": False,
+            "resend_from": None,
             "has_pin": False,
             "updated_at": None,
         }
@@ -95,6 +119,8 @@ def _shape(profile) -> dict:
         "notify_sms": profile.notify_sms,
         "telegram_chat_id": profile.telegram_chat_id,
         "notify_telegram": profile.notify_telegram,
+        "resend_configured": bool(profile.resend_api_key_hash and profile.resend_from),
+        "resend_from": profile.resend_from,
         "has_pin": bool(profile.pin_hash),
         "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
     }
@@ -123,6 +149,14 @@ async def write_profile(request: Request, body: ProfileUpdate, db=Depends(get_db
     if body.new_pin:
         pin_hash = get_password_hash(body.new_pin)
 
+    # Resend credentials: a new non-empty key is encrypted at rest and stored.
+    # An empty/None key leaves any existing key untouched.
+    resend_api_key_enc = None
+    if body.resend_api_key is not None and body.resend_api_key:
+        if not body.resend_api_key.startswith("re_"):
+            raise HTTPException(status_code=400, detail="Invalid Resend API key (should start with 're_')")
+        resend_api_key_enc = encrypt_value(body.resend_api_key)
+
     profile = save_alert_profile(
         db,
         display_name=body.display_name,
@@ -133,6 +167,61 @@ async def write_profile(request: Request, body: ProfileUpdate, db=Depends(get_db
         telegram_chat_id=body.telegram_chat_id,
         notify_telegram=body.notify_telegram,
         pin_hash=pin_hash,
+        resend_api_key_enc=resend_api_key_enc,
+        resend_from=body.resend_from,
     )
     db.commit()
     return _shape(profile)
+
+
+class ResendTestRequest(BaseModel):
+    pin: Optional[str] = None  # current PIN (required once a PIN is set)
+
+
+@router.post("/resend/test", summary="Send a test email via Resend")
+@rate_limit("5/minute")
+async def test_resend(request: Request, body: ResendTestRequest, db=Depends(get_db)):
+    """Send a real test email through Resend using the saved profile config.
+
+    This intentionally sends a real message - it is the verification step for
+    the Resend setup. Automatic fire-detection alerts still respect DRY_RUN.
+    """
+    existing = get_alert_profile(db)
+    if existing is None:
+        raise HTTPException(status_code=400, detail="No profile saved yet")
+
+    if existing.pin_hash:
+        if not body.pin or not verify_password(body.pin, existing.pin_hash):
+            raise HTTPException(status_code=403, detail="Invalid PIN")
+
+    api_key = decrypt_value(existing.resend_api_key_hash)
+    if not api_key or not existing.resend_from or not existing.email:
+        raise HTTPException(
+            status_code=400,
+            detail="Resend is not fully configured (need API key, verified sender, and an alert email)",
+        )
+
+    provider = ResendEmailProvider({
+        "enabled": True,
+        "api_key": api_key,
+        "from": existing.resend_from,
+        "to": existing.email,
+    })
+
+    test_incident = {
+        "id": "test",
+        "camera_id": "camera_01",
+        "camera_name": "Test Camera",
+        "confidence": 0.85,
+        "class_name": "fire",
+        "severity": "high",
+        "detected_at": datetime.utcnow().isoformat(),
+    }
+
+    result = await provider.send(test_incident)
+    return {
+        "success": result.success,
+        "provider": result.provider,
+        "recipient": result.recipient,
+        "error": result.error,
+    }

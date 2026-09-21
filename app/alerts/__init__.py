@@ -4,6 +4,7 @@ from app.alerts.email import EmailProvider
 from app.alerts.telegram import TelegramProvider
 from app.alerts.webhook import WebhookProvider, verify_webhook_request
 from app.alerts.sms import TwilioSMSProvider, WebhookSMSProvider
+from app.alerts.resend import ResendEmailProvider
 
 __all__ = [
     "AlertProvider",
@@ -17,4 +18,5 @@ __all__ = [
     "verify_webhook_request",
     "TwilioSMSProvider",
     "WebhookSMSProvider",
+    "ResendEmailProvider",
 ]

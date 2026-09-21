@@ -22,3 +22,8 @@ sms:
   to: ""                    # Phone number in E.164 format (+15551234567)
   # Twilio credentials from env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM
   # Webhook URL from env: SMS_WEBHOOK_URL, SMS_WEBHOOK_SECRET
+
+resend:
+  enabled: false
+  to: ""                    # Recipient email address
+  # Credentials from env: RESEND_API_KEY (key starting with re_), RESEND_FROM (verified sender)

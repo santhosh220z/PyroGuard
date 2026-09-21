@@ -7,7 +7,7 @@ import {
   RouterProvider,
 } from "react-router"
 
-function Icon({ name, className = "" }: { name: string className?: string }) {
+function Icon({ name, className = "" }: { name: string; className?: string }) {
   const icons: Record<string, React.ReactNode> = {
     flame: (
       <path d="M12 21c4.1 0 7-2.7 7-6.5 0-3-1.8-5.5-4.2-7.8.1 2-1 3.5-2.3 4.4.1-3.7-1.8-6-3.7-7.9.1 3-2.5 5.6-3.6 8.2C3.2 16.6 6.8 21 12 21Zm0-2.5c-1.8 0-3-1.2-3-2.8 0-1.1.7-2.3 2-3.7.1 1.3.7 2 1.5 2.5.6-.5 1.1-1.2 1.4-2.2 1.3 1.3 1.8 2.4 1.8 3.4 0 1.7-1.4 2.8-3.7 2.8Z" />
@@ -336,6 +336,8 @@ type ProfileData = {
   notify_sms: boolean
   telegram_chat_id: string | null
   notify_telegram: boolean
+  resend_configured: boolean
+  resend_from: string | null
   has_pin: boolean
   updated_at: string | null
 }
@@ -352,10 +354,15 @@ function ProfilePage() {
     notify_sms: false,
     telegram_chat_id: "",
     notify_telegram: false,
+    resend_api_key: "",
+    resend_from: "",
     pin: "",
     new_pin: "",
   })
   const [hasPin, setHasPin] = useState(false)
+  const [resendConfigured, setResendConfigured] = useState(false)
+  const [testingResend, setTestingResend] = useState(false)
+  const [resendTest, setResendTest] = useState<{ kind: "ok" | "error"; text: string } | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -367,6 +374,7 @@ function ProfilePage() {
         return
       }
       setHasPin(d.has_pin)
+      setResendConfigured(d.resend_configured)
       setForm((f) => ({
         ...f,
         display_name: d.display_name || "",
@@ -376,6 +384,7 @@ function ProfilePage() {
         notify_sms: d.notify_sms,
         telegram_chat_id: d.telegram_chat_id || "",
         notify_telegram: d.notify_telegram,
+        resend_from: d.resend_from || "",
       }))
     })
     return () => {
@@ -406,6 +415,8 @@ function ProfilePage() {
           notify_sms: form.notify_sms,
           telegram_chat_id: form.telegram_chat_id || null,
           notify_telegram: form.notify_telegram,
+          resend_api_key: form.resend_api_key.trim() || null,
+          resend_from: form.resend_from.trim() || null,
           pin: form.pin || null,
           new_pin: form.new_pin || null,
         }),
@@ -422,12 +433,46 @@ function ProfilePage() {
         return
       }
       setHasPin(!!(data as ProfileData)?.has_pin)
-      setForm((f) => ({ ...f, pin: "", new_pin: "" }))
+      setResendConfigured(!!(data as ProfileData)?.resend_configured)
+      setForm((f) => ({ ...f, pin: "", new_pin: "", resend_api_key: "" }))
       setMessage({ kind: "ok", text: "Profile saved. Fire alerts will use these contacts." })
     } catch {
       setMessage({ kind: "error", text: "Could not save profile. Is the server running?" })
     } finally {
       setSaving(false)
+    }
+  }
+
+  const testResend = async () => {
+    setTestingResend(true)
+    setResendTest(null)
+    try {
+      const res = await fetch("/api/profile/resend/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: form.pin || null }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        const detail = (data as any)?.detail
+        setResendTest({
+          kind: "error",
+          text: typeof detail === "string" ? detail : "Send test failed",
+        })
+        return
+      }
+      if ((data as any)?.success) {
+        setResendTest({
+          kind: "ok",
+          text: `Test email sent to ${(data as any)?.recipient || "your address"}. Check your inbox.`,
+        })
+      } else {
+        setResendTest({ kind: "error", text: (data as any)?.error || "Send test failed" })
+      }
+    } catch {
+      setResendTest({ kind: "error", text: "Could not reach the server." })
+    } finally {
+      setTestingResend(false)
     }
   }
 
@@ -514,6 +559,53 @@ function ProfilePage() {
                 />
                 Send Telegram alerts
               </label>
+              <div className="field">
+                <span>
+                  Resend API key{" "}
+                  {resendConfigured ? (
+                    <em className="resend-saved">· key saved</em>
+                  ) : (
+                    <em className="resend-muted">· optional — enables Resend email alerts</em>
+                  )}
+                </span>
+                <input
+                  type="password"
+                  value={form.resend_api_key}
+                  onChange={set("resend_api_key")}
+                  placeholder={resendConfigured ? "••••••••••••••• (leave blank to keep)" : "re_…"}
+                  maxLength={128}
+                  autoComplete="off"
+                />
+              </div>
+              <label className="field">
+                <span>Verified sender</span>
+                <input
+                  type="email"
+                  value={form.resend_from}
+                  onChange={set("resend_from")}
+                  placeholder="alerts@yourdomain.com"
+                />
+              </label>
+              <div className="resend-actions">
+                <button
+                  type="button"
+                  className="profile-save"
+                  onClick={testResend}
+                  disabled={testingResend || !resendConfigured}
+                  title={
+                    resendConfigured
+                      ? "Send a test email to verify Resend"
+                      : "Save a Resend API key and verified sender first"
+                  }
+                >
+                  {testingResend ? "Sending test…" : "Send test email"}
+                </button>
+                {resendTest && (
+                  <p className={resendTest.kind === "ok" ? "form-ok" : "form-error"}>
+                    {resendTest.text}
+                  </p>
+                )}
+              </div>
               <label className="field">
                 <span>{hasPin ? "Current PIN (required to save)" : "Current PIN (only if one is set)"}</span>
                 <input
@@ -559,6 +651,8 @@ function ProfilePage() {
             When fire or smoke is confirmed, PyroGuard sends alerts to the
             contacts you enabled above. Email and Telegram need their server
             credentials configured; SMS needs a Twilio account or webhook.
+            For Resend, save your API key and a verified sender here, then use
+            "Send test email" to verify before fire alerts rely on it.
           </p>
         </article>
       </section>

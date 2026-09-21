@@ -25,6 +25,7 @@ from app.database import (
 )
 from app.database.database import get_db_session
 from app.alerts import get_providers, AlertResult
+from app.config.security import decrypt_value
 from app.config.config import settings
 
 
@@ -88,6 +89,14 @@ class IncidentManager:
             contacts["phone"] = profile.phone
         if getattr(profile, "notify_telegram", False) and profile.telegram_chat_id:
             contacts["telegram_chat_id"] = profile.telegram_chat_id
+        if profile.email and getattr(profile, "resend_api_key_hash", None) and getattr(profile, "resend_from", None):
+            api_key = decrypt_value(profile.resend_api_key_hash)
+            if api_key:
+                contacts["resend"] = {
+                    "api_key": api_key,
+                    "from": profile.resend_from,
+                    "to": profile.email,
+                }
         return contacts
 
     def _providers_for_contacts(self, contacts: Dict[str, str]):
@@ -104,6 +113,14 @@ class IncidentManager:
             base["telegram"] = {**base.get("telegram", {}), "chat_id": contacts["telegram_chat_id"], "enabled": True}
         if contacts.get("phone"):
             base["sms"] = {**base.get("sms", {}), "to": contacts["phone"], "enabled": True}
+        if contacts.get("resend"):
+            base["resend"] = {
+                **base.get("resend", {}),
+                "enabled": True,
+                "api_key": contacts["resend"]["api_key"],
+                "from": contacts["resend"]["from"],
+                "to": contacts["resend"]["to"],
+            }
         return get_providers(base)
 
     async def _dispatch_alerts(

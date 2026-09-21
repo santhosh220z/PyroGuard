@@ -35,6 +35,52 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 
+def _secret_cipher():
+    """Fernet cipher derived from PYROGUARD_SECRET, or None if unset.
+
+    Any non-empty secret works: raw 44-char Fernet keys are used as-is,
+    anything else is stretched with SHA-256 into a valid Fernet key.
+    """
+    import base64
+    raw = os.getenv("PYROGUARD_SECRET", "")
+    if not raw:
+        return None
+    try:
+        from cryptography.fernet import Fernet
+        key = raw.encode()
+        try:
+            return Fernet(key if len(key) == 44 else base64.urlsafe_b64encode(__import__("hashlib").sha256(key).digest()))
+        except Exception:
+            return Fernet(base64.urlsafe_b64encode(__import__("hashlib").sha256(key).digest()))
+    except ImportError:
+        return None
+
+
+def encrypt_value(plaintext: str) -> str:
+    """Encrypt a secret for DB storage. Falls back to plaintext + warning."""
+    cipher = _secret_cipher()
+    if cipher is None:
+        import logging
+        logging.getLogger(__name__).warning("PYROGUARD_SECRET not set; storing secret in plaintext")
+        return plaintext
+    return "enc:" + cipher.encrypt(plaintext.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_value(stored: Optional[str]) -> Optional[str]:
+    """Decrypt a value produced by encrypt_value. Returns None on failure."""
+    if not stored:
+        return None
+    if not stored.startswith("enc:"):
+        return stored  # legacy/plaintext value
+    cipher = _secret_cipher()
+    if cipher is None:
+        return None
+    try:
+        return cipher.decrypt(stored[4:].encode("utf-8")).decode("utf-8")
+    except Exception:
+        return None
+
+
 def verify_webhook_signature(payload: bytes, signature: str, secret: str) -> bool:
     """Verify HMAC-SHA256 signature for webhook payloads."""
     expected = hmac.new(

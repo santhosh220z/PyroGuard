@@ -40,6 +40,8 @@ def save_alert_profile(
     telegram_chat_id: Optional[str] = None,
     notify_telegram: bool = False,
     pin_hash: Optional[str] = None,
+    resend_api_key_enc: Optional[str] = None,
+    resend_from: Optional[str] = None,
 ) -> AlertProfile:
     """Create or update the singleton alert-contact profile (id=1)."""
     profile = db.query(AlertProfile).filter(AlertProfile.id == 1).first()
@@ -53,6 +55,10 @@ def save_alert_profile(
     profile.notify_sms = bool(notify_sms)
     profile.telegram_chat_id = telegram_chat_id or None
     profile.notify_telegram = bool(notify_telegram)
+    if resend_api_key_enc is not None:
+        profile.resend_api_key_hash = resend_api_key_enc or None
+    if resend_from is not None:
+        profile.resend_from = resend_from or None
     if pin_hash is not None:
         profile.pin_hash = pin_hash
     profile.updated_at = datetime.utcnow()

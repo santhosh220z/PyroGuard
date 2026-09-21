@@ -19,7 +19,7 @@ class AlertProvider(ABC):
     def __init__(self, config: dict):
         self.config = config
         self.enabled = config.get("enabled", False)
-        self.name = self.__class__.__name__.replace("Provider", "").lower()
+        self.name = getattr(self, "PROVIDER_NAME", None) or self.__class__.__name__.replace("Provider", "").lower()
 
     @abstractmethod
     async def send(
