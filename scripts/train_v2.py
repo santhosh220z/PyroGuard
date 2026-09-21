@@ -30,7 +30,7 @@ TRAINING_CONFIG = {
     "optimizer": "SGD",
     "augmentation": True,
     "device": "cuda",
-    "workers": 4,
+    "workers": 2,  # Windows spawn + OneDrive sync: 4 workers make DataLoader crash-prone on interrupt
     "pretrained_weights": "yolo11s.pt",
     # Advanced LR schedule
     "cosine_lr": True,
