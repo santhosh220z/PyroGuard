@@ -158,4 +158,4 @@ Statuses: `DETECTED → CONFIRMED → ALERT_SENT → ACKNOWLEDGED → RESOLVED`
 
 ## License
 
-For educational/portfolio use. See the D-Fire dataset license for data usage terms.
+For educational/portfolio use. See the D-Fire dataset license for data usage terms and the model i used is YOLOV11s.
